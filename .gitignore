@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# 데이터셋 (용량 크므로 제외)
+ai/dataset/raw/
+ai/dataset/ESC-50/
+*.wav
+*.mp3
+*.flac
+*.csv
+
+# 모델 가중치 (releases로 관리)
+*.pt
+*.pth
+*.onnx
+*.tflite
+
+# Android / Kotlin
+watch/.gradle/
+watch/local.properties
+watch/build/
+watch/app/build/
+*.apk
+*.aab
+*.keystore
+
+# 환경변수 / 시크릿
+.env
+*.env
+config/secrets.py
+firebase_key.json
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+
+# 로그
+*.log
+backend/logs/*.json
+
+# 기타
+*.tmp
+*.bak
