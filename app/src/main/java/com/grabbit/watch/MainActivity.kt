@@ -1,8 +1,12 @@
 package com.grabbit.watch
 
+import android.content.Context
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,12 +17,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
+import com.grabbit.watch.model.DangerStyleMap
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,19 +35,33 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+fun triggerVibration(context: Context, danger: Int) {
+    val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    val pattern = DangerStyleMap.styleFor(danger).vibrationPattern
+    vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+}
+
 @Composable
 fun GrabbitWatchScreen() {
-    // 더미 상태 (나중에 실제 데이터로 교체)
+    val context = LocalContext.current
     var dangerLevel by remember { mutableStateOf(1) }
     var direction by remember { mutableStateOf("right") }
 
-    val shapeColor = when (dangerLevel) {
-        1 -> Color(0xFF4CAF50)  // 초록
-        2 -> Color(0xFFFFEB3B)  // 노랑
-        3 -> Color(0xFFFF9800)  // 주황
-        4 -> Color(0xFFF44336)  // 빨강
-        else -> Color.Gray
-    }
+    val style = DangerStyleMap.styleFor(dangerLevel)
+    val baseColor = Color(android.graphics.Color.parseColor(style.colorHex))
+
+    // 레벨 4일 때만 점멸 (알파값 반복)
+    val infiniteTransition = rememberInfiniteTransition(label = "blink")
+    val blinkAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blinkAlpha"
+    )
+    val shapeColor = if (style.isBlinking) baseColor.copy(alpha = blinkAlpha) else baseColor
 
     Box(
         modifier = Modifier
@@ -53,45 +73,40 @@ fun GrabbitWatchScreen() {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cx = size.width / 2
             val cy = size.height / 2
-            val r = size.width * 0.28f  // 도형이 놓일 반지름
+            val r = size.width * 0.28f
             val shapeSize = size.width * 0.13f
 
-            val (x, y) = when (direction) {
-                "front" -> Pair(cx, cy - r)
-                "rear"  -> Pair(cx, cy + r)
-                "left"  -> Pair(cx - r, cy)
-                "right" -> Pair(cx + r, cy)
-                else    -> Pair(cx, cy)  // unknown → 가운데
-            }
-
-            if (dangerLevel <= 2) {
-                // 원
-                drawCircle(
-                    color = shapeColor,
-                    radius = shapeSize,
-                    center = Offset(x, y)
-                )
-            } else {
-                // 삼각형 ▲
-                val path = Path().apply {
-                    moveTo(x, y - shapeSize)
-                    lineTo(x + shapeSize, y + shapeSize)
-                    lineTo(x - shapeSize, y + shapeSize)
-                    close()
+            if (direction != "unknown") {
+                val (x, y) = when (direction) {
+                    "front" -> Pair(cx, cy - r)
+                    "rear"  -> Pair(cx, cy + r)
+                    "left"  -> Pair(cx - r, cy)
+                    "right" -> Pair(cx + r, cy)
+                    else    -> Pair(cx, cy)
                 }
-                drawPath(path = path, color = shapeColor, style = Fill)
+
+                if (dangerLevel <= 2) {
+                    drawCircle(color = shapeColor, radius = shapeSize, center = Offset(x, y))
+                } else {
+                    val path = Path().apply {
+                        moveTo(x, y - shapeSize)
+                        lineTo(x + shapeSize, y + shapeSize)
+                        lineTo(x - shapeSize, y + shapeSize)
+                        close()
+                    }
+                    drawPath(path = path, color = shapeColor, style = Fill)
+                }
             }
         }
 
-        // 위험도 텍스트 (중앙)
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // 위험도 텍스트 — direction이 unknown일 때만 중앙, 아니면 살짝 위로 오프셋
+        Column(
+            modifier = Modifier.offset(y = if (direction == "unknown") 0.dp else (-4).dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 text = when (dangerLevel) {
-                    1 -> "낮음"
-                    2 -> "중간"
-                    3 -> "높음"
-                    4 -> "매우 높음"
-                    else -> ""
+                    1 -> "낮음"; 2 -> "중간"; 3 -> "높음"; 4 -> "매우 높음"; else -> ""
                 },
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -101,25 +116,22 @@ fun GrabbitWatchScreen() {
 
         // 더미 테스트 버튼 (하단)
         Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(1, 2, 3, 4).forEach { level ->
                     Button(
-                        onClick = { dangerLevel = level },
+                        onClick = {
+                            dangerLevel = level
+                            triggerVibration(context, level)
+                        },
                         modifier = Modifier.size(30.dp),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = when (level) {
-                                1 -> Color(0xFF4CAF50)
-                                2 -> Color(0xFFFFEB3B)
-                                3 -> Color(0xFFFF9800)
-                                4 -> Color(0xFFF44336)
-                                else -> Color.Gray
-                            }
+                            backgroundColor = Color(
+                                android.graphics.Color.parseColor(DangerStyleMap.styleFor(level).colorHex)
+                            )
                         )
                     ) {
                         Text("$level", fontSize = 10.sp, color = Color.White)
@@ -135,11 +147,7 @@ fun GrabbitWatchScreen() {
                     ) {
                         Text(
                             text = when (dir) {
-                                "front" -> "↑"
-                                "left"  -> "←"
-                                "right" -> "→"
-                                "rear"  -> "↓"
-                                else    -> "?"
+                                "front" -> "↑"; "left" -> "←"; "right" -> "→"; "rear" -> "↓"; else -> "?"
                             },
                             fontSize = 10.sp,
                             color = Color.White
