@@ -39,6 +39,7 @@ android {
 
 dependencies {
     implementation(libs.play.services.wearable)
+    implementation("com.google.code.gson:gson:2.10.1")
 
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")

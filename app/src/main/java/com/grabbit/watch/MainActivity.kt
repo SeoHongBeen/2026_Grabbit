@@ -25,6 +25,7 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
 import com.grabbit.watch.model.DangerStyleMap
+import com.grabbit.watch.model.SoundAlertParser
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +47,17 @@ fun GrabbitWatchScreen() {
     val context = LocalContext.current
     var dangerLevel by remember { mutableStateOf(1) }
     var direction by remember { mutableStateOf("right") }
+
+    // JSON 문자열을 받아서 파싱 후 상태 반영 + 진동까지 처리하는 함수
+    fun applyAlert(json: String) {
+        val alert = SoundAlertParser.parse(json)
+        if (alert != null) {
+            dangerLevel = alert.danger
+            direction = alert.direction
+            triggerVibration(context, alert.danger)
+        }
+        // 파싱 실패 시 조용히 무시 (추후 로그 추가 고려)
+    }
 
     val style = DangerStyleMap.styleFor(dangerLevel)
     val baseColor = Color(android.graphics.Color.parseColor(style.colorHex))
@@ -114,7 +126,7 @@ fun GrabbitWatchScreen() {
             )
         }
 
-        // 더미 테스트 버튼 (하단)
+        // 더미 테스트 버튼 (하단) — 이제 JSON 파싱 경로를 거쳐서 상태 반영
         Column(
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -124,8 +136,14 @@ fun GrabbitWatchScreen() {
                 listOf(1, 2, 3, 4).forEach { level ->
                     Button(
                         onClick = {
-                            dangerLevel = level
-                            triggerVibration(context, level)
+                            val mockJson = """
+                                {"eventId":"evt_${System.currentTimeMillis()}",
+                                 "timestamp":${System.currentTimeMillis()},
+                                 "label":"test_sound",
+                                 "danger":$level,
+                                 "direction":"$direction"}
+                            """.trimIndent()
+                            applyAlert(mockJson)
                         },
                         modifier = Modifier.size(30.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -141,7 +159,17 @@ fun GrabbitWatchScreen() {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf("front", "left", "right", "rear", "?").forEach { dir ->
                     Button(
-                        onClick = { direction = if (dir == "?") "unknown" else dir },
+                        onClick = {
+                            val newDir = if (dir == "?") "unknown" else dir
+                            val mockJson = """
+                                {"eventId":"evt_${System.currentTimeMillis()}",
+                                 "timestamp":${System.currentTimeMillis()},
+                                 "label":"test_sound",
+                                 "danger":$dangerLevel,
+                                 "direction":"$newDir"}
+                            """.trimIndent()
+                            applyAlert(mockJson)
+                        },
                         modifier = Modifier.size(30.dp),
                         colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray)
                     ) {
