@@ -26,6 +26,11 @@ ai/dataset/ESC-50/
 *.flac
 *.csv
 
+
+# AI features
+ai/features/
+toMFCC.png
+
 # 모델 가중치 (releases로 관리)
 *.pt
 *.pth
