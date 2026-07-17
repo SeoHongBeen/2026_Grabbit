@@ -68,3 +68,6 @@ backend/logs/*.json
 # 기타
 *.tmp
 *.bak
+
+.DS_Store
+local.properties
