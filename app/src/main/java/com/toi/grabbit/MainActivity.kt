@@ -17,6 +17,7 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 // RPi가 보내는 JSON 형식 (docs/json-schema.md 참고)
 data class SoundAlert(
@@ -56,7 +57,17 @@ class MainActivity : AppCompatActivity() {
                                 "소리: ${alert.`class`}\n방향: ${alert.direction}도\n위험도: ${alert.danger}"
                         }
 
-                        // TODO: 실내/실외 모드 필터링 → 워치 전달 (수아 언니 파트랑 연결)
+                        // 매핑 → 워치 전달 (others/미등록은 스킵되고 이력에만 남음)
+                        val rpiJson = JSONObject().apply {
+                            put("class", alert.`class`)
+                            put("direction", alert.direction)
+                            put("timestamp", alert.timestamp)
+                        }
+                        val sent = WatchSender.sendAlert(this@MainActivity, rpiJson)
+                        Log.d("Grabbit", if (sent) "워치 전송 시도: ${alert.`class`}" else "워치 스킵(others/미등록): ${alert.`class`}")
+
+                        // TODO: 실내/실외 모드 필터링은 여기에 추가 예정
+
                         call.respond(mapOf("status" to "ok"))
                     }
                 }
