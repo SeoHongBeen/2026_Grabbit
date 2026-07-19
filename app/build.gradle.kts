@@ -4,6 +4,12 @@ plugins {
 
 android {
     namespace = "com.toi.grabbit"
+    packaging {
+        resources {
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/io.netty.versions.properties"
+        }
+    }
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -34,6 +40,11 @@ android {
 }
 
 dependencies {
+    // Grabbit: HTTP 수신 서버 (RPi JSON 받기)
+    implementation("io.ktor:ktor-server-core:2.3.12")
+    implementation("io.ktor:ktor-server-netty:2.3.12")
+    implementation("io.ktor:ktor-server-content-negotiation:2.3.12")
+    implementation("io.ktor:ktor-serialization-gson:2.3.12")
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)
