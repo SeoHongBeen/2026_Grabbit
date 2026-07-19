@@ -71,3 +71,7 @@ backend/logs/*.json
 
 .DS_Store
 local.properties
+
+# macOS / Android Studio
+.DS_Store
+local.properties
