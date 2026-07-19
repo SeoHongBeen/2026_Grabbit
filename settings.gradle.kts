@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Grabbit"
 include(":app")
+include(":wear")
