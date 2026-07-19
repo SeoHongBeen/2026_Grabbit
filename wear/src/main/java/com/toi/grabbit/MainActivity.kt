@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
+import com.toi.grabbit.model.AlertListenerService
 import com.toi.grabbit.model.DirectionMap
 import com.toi.grabbit.model.LabelMap
 import com.toi.grabbit.model.SoundAlert
@@ -91,6 +92,16 @@ fun GrabbitWatchScreen() {
             }
             currentAlert = alert
             triggerVibration(context, alert.vibration)
+        }
+    }
+
+    // MessageClient(폰 relay)로 수신된 alert를 화면에 반영
+    DisposableEffect(Unit) {
+        AlertListenerService.onAlertReceived = { json ->
+            applyAlert(json)
+        }
+        onDispose {
+            AlertListenerService.onAlertReceived = null
         }
     }
 
@@ -171,7 +182,7 @@ fun GrabbitWatchScreen() {
             }
         }
 
-        // Mock 테스트 버튼들 (실제 데이터는 나중에 MessageClient로 수신 예정)
+        // Mock 테스트 버튼들 (실제 데이터는 MessageClient로도 수신됨)
         Column(
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -233,7 +244,7 @@ fun GrabbitWatchScreen() {
                     }
                 }
             }
-            // 각도 테스트 버튼 (0/90/180/270도 + 랜덤)
+            // 각도 테스트 버튼 (0/90/180/270도)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(0, 90, 180, 270).forEach { angle ->
                     Button(
