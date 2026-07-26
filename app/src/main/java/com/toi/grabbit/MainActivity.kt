@@ -1,23 +1,15 @@
 package com.toi.grabbit
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import io.ktor.serialization.gson.gson
-import io.ktor.server.application.call
-import io.ktor.server.application.install
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
-import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.request.receive
-import io.ktor.server.response.respond
-import io.ktor.server.routing.post
-import io.ktor.server.routing.routing
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 // RPi가 보내는 JSON 형식 (docs/json-schema.md 참고)
 data class SoundAlert(
@@ -29,49 +21,36 @@ data class SoundAlert(
 
 class MainActivity : AppCompatActivity() {
 
-    private val serverPort = 8080
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 화면에 상태 표시용 텍스트뷰 (레이아웃 파일 없이 코드로 간단히)
         val statusView = TextView(this).apply {
-            text = "Grabbit 수신 대기중... (포트 $serverPort)"
+            text = "Grabbit 수신 대기중... (포트 ${GrabbitRelayService.PORT})"
             textSize = 18f
             setPadding(40, 80, 40, 0)
         }
         setContentView(statusView)
 
-        // HTTP 서버를 백그라운드에서 시작
-        CoroutineScope(Dispatchers.IO).launch {
-            embeddedServer(Netty, port = serverPort) {
-                install(ContentNegotiation) { gson() }
-                routing {
-                    post("/alert") {
-                        val alert = call.receive<SoundAlert>()
-                        Log.d("Grabbit", "수신: $alert")
+        // 알림 권한 요청 (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+        }
 
-                        // 화면 갱신은 메인 스레드에서
-                        runOnUiThread {
-                            statusView.text =
-                                "소리: ${alert.`class`}\n방향: ${alert.direction}도\n위험도: ${alert.danger}"
-                        }
+        // HTTP 서버는 이제 Foreground Service가 담당
+        ContextCompat.startForegroundService(
+            this, Intent(this, GrabbitRelayService::class.java)
+        )
 
-                        // 매핑 → 워치 전달 (others/미등록은 스킵되고 이력에만 남음)
-                        val rpiJson = JSONObject().apply {
-                            put("class", alert.`class`)
-                            put("direction", alert.direction)
-                            put("timestamp", alert.timestamp)
-                        }
-                        val sent = WatchSender.sendAlert(this@MainActivity, rpiJson)
-                        Log.d("Grabbit", if (sent) "워치 전송 시도: ${alert.`class`}" else "워치 스킵(others/미등록): ${alert.`class`}")
-
-                        // TODO: 실내/실외 모드 필터링은 여기에 추가 예정
-
-                        call.respond(mapOf("status" to "ok"))
-                    }
-                }
-            }.start(wait = true)
+        // 서비스가 받은 알림을 화면에 반영
+        lifecycleScope.launch {
+            AlertBus.latest.collect { alert ->
+                alert ?: return@collect
+                statusView.text =
+                    "소리: ${alert.`class`}\n방향: ${alert.direction}도\n위험도: ${alert.danger}"
+            }
         }
     }
 }
