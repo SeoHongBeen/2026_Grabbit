@@ -3,6 +3,7 @@ package com.toi.grabbit
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -32,7 +33,25 @@ class GrabbitRelayService : Service() {
         const val CHANNEL_ID = "grabbit_relay"
         const val NOTI_ID = 1
         const val PORT = 8080
-        private const val TAG = "Grabbit"
+        const val TAG = "Grabbit"
+
+        /** 수신 알림 공통 처리 — HTTP 수신부와 테스트 버튼 양쪽에서 사용 */
+        fun handleAlert(context: Context, alert: SoundAlert) {
+            Log.d(TAG, "수신: $alert")
+            AlertBus.publish(alert)
+
+            val rpiJson = JSONObject().apply {
+                put("class", alert.`class`)
+                put("direction", alert.direction)
+                put("timestamp", alert.timestamp)
+            }
+            val sent = WatchSender.sendAlert(context, rpiJson)
+            Log.d(
+                TAG,
+                if (sent) "워치 전송 시도: ${alert.`class`}"
+                else "워치 스킵(others/미등록): ${alert.`class`}"
+            )
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -65,22 +84,7 @@ class GrabbitRelayService : Service() {
                 routing {
                     post("/alert") {
                         val alert = call.receive<SoundAlert>()
-                        Log.d(TAG, "수신: $alert")
-
-                        AlertBus.publish(alert)
-
-                        val rpiJson = JSONObject().apply {
-                            put("class", alert.`class`)
-                            put("direction", alert.direction)
-                            put("timestamp", alert.timestamp)
-                        }
-                        val sent = WatchSender.sendAlert(this@GrabbitRelayService, rpiJson)
-                        Log.d(
-                            TAG,
-                            if (sent) "워치 전송 시도: ${alert.`class`}"
-                            else "워치 스킵(others/미등록): ${alert.`class`}"
-                        )
-
+                        handleAlert(this@GrabbitRelayService, alert)
                         call.respond(mapOf("status" to "ok"))
                     }
                 }
