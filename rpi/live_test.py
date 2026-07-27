@@ -4,30 +4,28 @@ import joblib
 import time
 import pyaudio
 
-# 1. 실측 데이터로 재학습된 v2 KNN 모델 로드
-MODEL_PATH = "doa_knn_model_v4.pkl"
+# v3 모델 사용 (4클래스: left/right/front/rear 그대로 살아있는 버전)
+MODEL_PATH = "doa_knn_model_v3.pkl"
 try:
     model = joblib.load(MODEL_PATH)
-    print("성공: DoA 머신러닝 모델(v2) 로드 완료")
+    print("성공: DoA 머신러닝 모델(v3) 로드 완료")
 except FileNotFoundError:
     print(f"에러: {MODEL_PATH} 파일이 같은 폴더에 없습니다.")
     exit()
 
-# 라즈베리파이 오디오 설정
 FS = 16000
 CHANNELS = 4
 CHUNK = 1024 * 4
 FORMAT = pyaudio.paInt16
 
-# 클리핑 방지 + 조용할 때 무시하기 위한 볼륨 임계값
 VOLUME_THRESHOLD = 3000
 COOLDOWN_SEC = 0.5
 
+# 확신도 임계값: 이 값보다 낮으면 unknown 처리
+CONFIDENCE_THRESHOLD = 0.6
+
 
 def get_real_microphone_input(stream):
-    """
-    라즈베리파이 4채널 마이크에서 실제 오디오 청크를 읽어 채널별로 분리한다.
-    """
     data = stream.read(CHUNK, exception_on_overflow=False)
     audio = np.frombuffer(data, dtype=np.int16).astype(np.float32)
 
@@ -50,9 +48,24 @@ def extract_features(ch0, ch1, ch2, ch3):
     return [delay_x, delay_y]
 
 
+def predict_with_confidence(features):
+    """
+    확신도가 낮으면 unknown으로 강제 처리하는 예측 함수
+    """
+    input_vector = np.array([features])
+    proba = model.predict_proba(input_vector)[0]
+    max_proba = np.max(proba)
+    predicted_class = model.classes_[np.argmax(proba)]
+
+    if max_proba < CONFIDENCE_THRESHOLD:
+        return "unknown", max_proba, predicted_class
+    else:
+        return predicted_class, max_proba, predicted_class
+
+
 if __name__ == "__main__":
-    print("==== 라즈베리파이 실시간 DoA 예측 테스트 시작 (v2 모델) ====")
-    print(f"볼륨 임계값: {VOLUME_THRESHOLD} (박수 등 큰 소리에만 반응)")
+    print("==== 라즈베리파이 실시간 DoA 예측 테스트 (v3 + 확신도 필터) ====")
+    print(f"볼륨 임계값: {VOLUME_THRESHOLD}, 확신도 임계값: {CONFIDENCE_THRESHOLD}")
     print("마이크 앞에서 40cm~1m 거리 두고 방향 바꿔가며 소리내보세요.")
     print("종료: Ctrl+C\n")
 
@@ -64,6 +77,10 @@ if __name__ == "__main__":
                      input_device_index=1,
                      frames_per_buffer=CHUNK)
 
+    # 스트림 안정화: 초기 청크 버림
+    for _ in range(5):
+        stream.read(CHUNK, exception_on_overflow=False)
+
     last_trigger_time = 0
 
     try:
@@ -73,10 +90,10 @@ if __name__ == "__main__":
             now = time.time()
             if volume > VOLUME_THRESHOLD and (now - last_trigger_time) > COOLDOWN_SEC:
                 features = extract_features(ch0, ch1, ch2, ch3)
-                input_vector = np.array([features])
-                predicted_direction = model.predict(input_vector)[0]
+                direction, confidence, raw_class = predict_with_confidence(features)
 
-                print(f"[감지! volume={volume:.0f}] 딜레이: X={features[0]:4d}, Y={features[1]:4d}  ->  추정된 방향: {predicted_direction}")
+                print(f"[감지! volume={volume:.0f}] 딜레이: X={features[0]:4d}, Y={features[1]:4d}  ->  "
+                      f"최종: {direction:8s} (확신도={confidence:.2f}, 원래예측={raw_class})")
                 last_trigger_time = now
 
     except KeyboardInterrupt:
