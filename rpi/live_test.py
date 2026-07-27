@@ -5,7 +5,7 @@ import time
 import pyaudio
 
 # 1. 실측 데이터로 재학습된 v2 KNN 모델 로드
-MODEL_PATH = "doa_knn_model_v2.pkl"
+MODEL_PATH = "doa_knn_model_v4.pkl"
 try:
     model = joblib.load(MODEL_PATH)
     print("성공: DoA 머신러닝 모델(v2) 로드 완료")
