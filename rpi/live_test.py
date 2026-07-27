@@ -4,7 +4,6 @@ import joblib
 import time
 import pyaudio
 
-# v3 모델 사용 (4클래스: left/right/front/rear 그대로 살아있는 버전)
 MODEL_PATH = "doa_knn_model_v3.pkl"
 try:
     model = joblib.load(MODEL_PATH)
@@ -21,7 +20,6 @@ FORMAT = pyaudio.paInt16
 VOLUME_THRESHOLD = 3000
 COOLDOWN_SEC = 0.5
 
-# 확신도 임계값: 이 값보다 낮으면 unknown 처리
 CONFIDENCE_THRESHOLD = 0.6
 
 
@@ -49,9 +47,6 @@ def extract_features(ch0, ch1, ch2, ch3):
 
 
 def predict_with_confidence(features):
-    """
-    확신도가 낮으면 unknown으로 강제 처리하는 예측 함수
-    """
     input_vector = np.array([features])
     proba = model.predict_proba(input_vector)[0]
     max_proba = np.max(proba)
@@ -77,7 +72,6 @@ if __name__ == "__main__":
                      input_device_index=1,
                      frames_per_buffer=CHUNK)
 
-    # 스트림 안정화: 초기 청크 버림
     for _ in range(5):
         stream.read(CHUNK, exception_on_overflow=False)
 
