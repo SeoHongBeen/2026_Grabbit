@@ -4,10 +4,10 @@ import joblib
 import time
 import pyaudio
 
-MODEL_PATH = "doa_knn_model_v3.pkl"
+MODEL_PATH = "doa_knn_model_v4.pkl"
 try:
     model = joblib.load(MODEL_PATH)
-    print("성공: DoA 머신러닝 모델(v3) 로드 완료")
+    print("성공: DoA 머신러닝 모델(v4) 로드 완료")
 except FileNotFoundError:
     print(f"에러: {MODEL_PATH} 파일이 같은 폴더에 없습니다.")
     exit()
@@ -19,8 +19,6 @@ FORMAT = pyaudio.paInt16
 
 VOLUME_THRESHOLD = 3000
 COOLDOWN_SEC = 0.5
-
-CONFIDENCE_THRESHOLD = 0.6
 
 
 def get_real_microphone_input(stream):
@@ -46,21 +44,9 @@ def extract_features(ch0, ch1, ch2, ch3):
     return [delay_x, delay_y]
 
 
-def predict_with_confidence(features):
-    input_vector = np.array([features])
-    proba = model.predict_proba(input_vector)[0]
-    max_proba = np.max(proba)
-    predicted_class = model.classes_[np.argmax(proba)]
-
-    if max_proba < CONFIDENCE_THRESHOLD:
-        return "unknown", max_proba, predicted_class
-    else:
-        return predicted_class, max_proba, predicted_class
-
-
 if __name__ == "__main__":
-    print("==== 라즈베리파이 실시간 DoA 예측 테스트 (v3 + 확신도 필터) ====")
-    print(f"볼륨 임계값: {VOLUME_THRESHOLD}, 확신도 임계값: {CONFIDENCE_THRESHOLD}")
+    print("==== 라즈베리파이 실시간 DoA 예측 테스트 시작 (v4 모델) ====")
+    print(f"볼륨 임계값: {VOLUME_THRESHOLD}")
     print("마이크 앞에서 40cm~1m 거리 두고 방향 바꿔가며 소리내보세요.")
     print("종료: Ctrl+C\n")
 
@@ -84,10 +70,10 @@ if __name__ == "__main__":
             now = time.time()
             if volume > VOLUME_THRESHOLD and (now - last_trigger_time) > COOLDOWN_SEC:
                 features = extract_features(ch0, ch1, ch2, ch3)
-                direction, confidence, raw_class = predict_with_confidence(features)
+                input_vector = np.array([features])
+                predicted_direction = model.predict(input_vector)[0]
 
-                print(f"[감지! volume={volume:.0f}] 딜레이: X={features[0]:4d}, Y={features[1]:4d}  ->  "
-                      f"최종: {direction:8s} (확신도={confidence:.2f}, 원래예측={raw_class})")
+                print(f"[감지! volume={volume:.0f}] 딜레이: X={features[0]:4d}, Y={features[1]:4d}  ->  추정된 방향: {predicted_direction}")
                 last_trigger_time = now
 
     except KeyboardInterrupt:
