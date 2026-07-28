@@ -46,14 +46,25 @@ class MainActivity : AppCompatActivity() {
                     "crackling_fire", "glass_breaking", "siren",
                     "door_wood_knock", "door_wood_creaks", "others"
                 )
+                // 전방(315~44) 제외 — 좌/우/후방만
+                val dir = listOf(
+                    (45..134).random(),
+                    (135..224).random(),
+                    (225..314).random()
+                ).random()
                 val fake = SoundAlert(
                     `class` = classes.random(),
-                    direction = (0..359).random(),
+                    direction = dir,
                     danger = (0..2).random(),
                     timestamp = System.currentTimeMillis() / 1000
                 )
                 GrabbitRelayService.handleAlert(this@MainActivity, fake)
             }
+        }
+
+        val clearButton = Button(this).apply {
+            text = "기록 전체 삭제"
+            setOnClickListener { AlertBus.clear(this@MainActivity) }
         }
 
         val historyTitle = TextView(this).apply {
@@ -76,10 +87,14 @@ class MainActivity : AppCompatActivity() {
             setPadding(40, 80, 40, 40)
             addView(statusView)
             addView(testButton)
+            addView(clearButton)
             addView(historyTitle)
             addView(scroll)
         }
         setContentView(root)
+
+        // 저장된 이력 복원
+        AlertBus.restore(this)
 
         // 알림 권한 요청 (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -99,7 +114,7 @@ class MainActivity : AppCompatActivity() {
             AlertBus.latest.collect { alert ->
                 alert ?: return@collect
                 statusView.text =
-                    "소리: ${alert.`class`}\n방향: ${alert.direction}도\n위험도: ${alert.danger}"
+                    "소리: ${alert.`class`}\n방향: ${dirLabel(alert.direction)}\n위험도: ${alert.danger}"
             }
         }
 
@@ -121,6 +136,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 각도 → 좌/우/후방 (전방은 사용 안 함) */
+    private fun dirLabel(deg: Int): String = when (deg) {
+        in 45..134 -> "오른쪽"
+        in 135..224 -> "뒤쪽"
+        in 225..314 -> "왼쪽"
+        else -> "${deg}°"
+    }
+
     private fun buildRow(alert: SoundAlert): TextView {
         val spec = alertMap[alert.`class`]
         val label = spec?.label ?: alert.`class`
@@ -128,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         val time = timeFormat.format(Date(alert.timestamp * 1000))
 
         return TextView(this).apply {
-            text = "$time   $label   ${alert.direction}°   위험도 ${alert.danger}"
+            text = "$time   $label   ${dirLabel(alert.direction)}   위험도 ${alert.danger}"
             textSize = 15f
             setPadding(28, 24, 28, 24)
             setBackgroundColor(color)

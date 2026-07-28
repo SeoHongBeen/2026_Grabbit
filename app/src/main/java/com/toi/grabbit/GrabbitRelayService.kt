@@ -38,7 +38,7 @@ class GrabbitRelayService : Service() {
         /** 수신 알림 공통 처리 — HTTP 수신부와 테스트 버튼 양쪽에서 사용 */
         fun handleAlert(context: Context, alert: SoundAlert) {
             Log.d(TAG, "수신: $alert")
-            AlertBus.publish(alert)
+            AlertBus.publish(context, alert)
 
             val rpiJson = JSONObject().apply {
                 put("class", alert.`class`)
