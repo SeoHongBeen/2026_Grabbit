@@ -6,9 +6,9 @@ import com.google.gson.JsonSyntaxException
 data class SoundAlert(
     val eventId: String,
     val label: String,
-    val color: String,        // 폰이 계산해서 보냄, 예: "#FF3B30"
-    val vibration: String,    // "urgent" | "normal" | "soft" | "none"
-    val direction: Int,       // 각도 0~360
+    val color: String,
+    val vibration: String,
+    val direction: Int,       // 각도 0~360, -1이면 unknown
     val rpiTimestamp: Long,
     val phoneTimestamp: Long
 )
@@ -17,10 +17,6 @@ object SoundAlertParser {
     private val gson = Gson()
     private val validVibrations = setOf("urgent", "normal", "soft", "none")
 
-    /**
-     * JSON 문자열을 SoundAlert로 파싱.
-     * 필수 필드 누락, vibration 값 이상, direction 범위(0~360) 벗어남 시 null 반환.
-     */
     fun parse(json: String): SoundAlert? {
         return try {
             val alert = gson.fromJson(json, SoundAlert::class.java) ?: return null
@@ -31,7 +27,7 @@ object SoundAlertParser {
             if (alert.vibration !in validVibrations) {
                 return null
             }
-            if (alert.direction !in 0..360) {
+            if (alert.direction != -1 && alert.direction !in 0..360) {
                 return null
             }
             alert
