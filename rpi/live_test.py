@@ -4,12 +4,15 @@ import joblib
 import time
 import pyaudio
 
-MODEL_PATH = "doa_knn_model_v4.pkl"
+# 1. v5 모델과 스케일러 로드
+MODEL_PATH = "doa_knn_model_v5.pkl"
+SCALER_PATH = "doa_scaler.pkl"
 try:
     model = joblib.load(MODEL_PATH)
-    print("성공: DoA 머신러닝 모델(v4) 로드 완료")
-except FileNotFoundError:
-    print(f"에러: {MODEL_PATH} 파일이 같은 폴더에 없습니다.")
+    scaler = joblib.load(SCALER_PATH)
+    print("성공: DoA v5 모델 + 스케일러 로드 완료")
+except FileNotFoundError as e:
+    print(f"에러: 파일이 없습니다 - {e}")
     exit()
 
 FS = 16000
@@ -41,11 +44,36 @@ def extract_features(ch0, ch1, ch2, ch3):
     corr_y = correlate(ch1, ch3, mode='full')
     delay_y = np.argmax(corr_y) - (len(ch1) - 1)
 
-    return [delay_x, delay_y]
+    rms0 = np.sqrt(np.mean(ch0.astype(np.float64)**2))
+    rms1 = np.sqrt(np.mean(ch1.astype(np.float64)**2))
+    rms2 = np.sqrt(np.mean(ch2.astype(np.float64)**2))
+    rms3 = np.sqrt(np.mean(ch3.astype(np.float64)**2))
+
+    return delay_x, delay_y, rms0, rms1, rms2, rms3
+
+
+def get_doa_direction(delay_x, delay_y, rms0, rms1, rms2, rms3):
+    """
+    주하 v5 스펙 그대로: RMS 비율 변환 -> 스케일러 -> KNN 예측
+    """
+    rms_sum = rms0 + rms1 + rms2 + rms3 + 1e-5
+
+    rms0_ratio = rms0 / rms_sum
+    rms1_ratio = rms1 / rms_sum
+    rms2_ratio = rms2 / rms_sum
+    rms3_ratio = rms3 / rms_sum
+
+    raw_features = np.array([[delay_x, delay_y,
+                              rms0_ratio, rms1_ratio, rms2_ratio, rms3_ratio]])
+
+    scaled_features = scaler.transform(raw_features)
+    predicted_direction = model.predict(scaled_features)[0]
+
+    return predicted_direction
 
 
 if __name__ == "__main__":
-    print("==== 라즈베리파이 실시간 DoA 예측 테스트 시작 (v4 모델) ====")
+    print("==== 라즈베리파이 실시간 DoA 예측 테스트 (v5: 6차원 피처 + 스케일러) ====")
     print(f"볼륨 임계값: {VOLUME_THRESHOLD}")
     print("마이크 앞에서 40cm~1m 거리 두고 방향 바꿔가며 소리내보세요.")
     print("종료: Ctrl+C\n")
@@ -58,6 +86,7 @@ if __name__ == "__main__":
                      input_device_index=1,
                      frames_per_buffer=CHUNK)
 
+    # 스트림 안정화: 초기 청크 버림
     for _ in range(5):
         stream.read(CHUNK, exception_on_overflow=False)
 
@@ -69,11 +98,11 @@ if __name__ == "__main__":
 
             now = time.time()
             if volume > VOLUME_THRESHOLD and (now - last_trigger_time) > COOLDOWN_SEC:
-                features = extract_features(ch0, ch1, ch2, ch3)
-                input_vector = np.array([features])
-                predicted_direction = model.predict(input_vector)[0]
+                dx, dy, r0, r1, r2, r3 = extract_features(ch0, ch1, ch2, ch3)
+                direction = get_doa_direction(dx, dy, r0, r1, r2, r3)
 
-                print(f"[감지! volume={volume:.0f}] 딜레이: X={features[0]:4d}, Y={features[1]:4d}  ->  추정된 방향: {predicted_direction}")
+                print(f"[감지! vol={volume:.0f}] dX={dx:3d} dY={dy:3d} "
+                      f"RMS=[{r0:.0f},{r1:.0f},{r2:.0f},{r3:.0f}]  ->  방향: {direction}")
                 last_trigger_time = now
 
     except KeyboardInterrupt:
