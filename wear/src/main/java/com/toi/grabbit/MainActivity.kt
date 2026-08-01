@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,8 +35,9 @@ import com.toi.grabbit.model.VibrationTypeMap
 
 private const val TAG = "Grabbit"
 
-// 마지막으로 처리한 eventId를 기억 (앱 프로세스가 살아있는 동안 유지, 중복 알림 방지용)
-private var lastProcessedEventId: String? = null
+// 최근 처리한 eventId들을 기억 (Set 기반, 최대 20개까지 유지 - 중복 알림 방지용)
+private val recentEventIds = ArrayDeque<String>()
+private const val MAX_RECENT_EVENTS = 20
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,11 +68,14 @@ fun handleIncomingJson(json: String, onSuccess: (SoundAlert) -> Unit) {
         return
     }
 
-    if (alert.eventId == lastProcessedEventId) {
+    if (recentEventIds.contains(alert.eventId)) {
         Log.d(TAG, "중복 eventId 감지 (${alert.eventId}) - 무시함")
         return
     }
-    lastProcessedEventId = alert.eventId
+    recentEventIds.addLast(alert.eventId)
+    if (recentEventIds.size > MAX_RECENT_EVENTS) {
+        recentEventIds.removeFirst()
+    }
 
     Log.d(TAG, "파싱 성공: eventId=${alert.eventId}, label=${alert.label}, color=${alert.color}, vibration=${alert.vibration}, direction=${alert.direction}")
     onSuccess(alert)
@@ -122,6 +127,18 @@ fun GrabbitWatchScreen() {
     val isUrgent = alert?.vibration == "urgent"
     val shapeColor = if (isUrgent) baseColor.copy(alpha = blinkAlpha) else baseColor
 
+    // 파동(ripple) 애니메이션 — 방향이 있을 때 도형 주변으로 원이 퍼져나감
+    val rippleTransition = rememberInfiniteTransition(label = "ripple")
+    val rippleProgress by rippleTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rippleProgress"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -156,6 +173,18 @@ fun GrabbitWatchScreen() {
                         close()
                     }
                     drawPath(path = path, color = shapeColor, style = Fill)
+                }
+
+                // 파동: unknown이 아닐 때만 방향 쪽으로 퍼져나가는 원 표시
+                if (sector != "unknown") {
+                    val rippleRadius = shapeSize + (shapeSize * 1.8f * rippleProgress)
+                    val rippleAlpha = (1f - rippleProgress) * 0.6f
+                    drawCircle(
+                        color = baseColor.copy(alpha = rippleAlpha),
+                        radius = rippleRadius,
+                        center = Offset(x, y),
+                        style = Stroke(width = 3f)
+                    )
                 }
             }
         }
@@ -244,9 +273,9 @@ fun GrabbitWatchScreen() {
                     }
                 }
             }
-            // 각도 테스트 버튼 (0/90/180/270도)
+            // 각도 테스트 버튼 (0/90/180/270도 + unknown)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(0, 90, 180, 270).forEach { angle ->
+                listOf(0, 90, 180, 270, -1).forEach { angle ->
                     Button(
                         onClick = {
                             val label = alert?.label ?: "siren"
@@ -266,7 +295,7 @@ fun GrabbitWatchScreen() {
                         modifier = Modifier.size(28.dp),
                         colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray)
                     ) {
-                        Text("${angle}°", fontSize = 8.sp, color = Color.White)
+                        Text(if (angle == -1) "?" else "${angle}°", fontSize = 8.sp, color = Color.White)
                     }
                 }
             }
