@@ -25,7 +25,7 @@ RPi가 소리를 감지하면 아래 형식의 JSON을 폰으로 HTTP POST 한�
 ## 참고
 
 - 전송 방식: HTTP POST, Content-Type: application/json
-- 폰은 실내/실외 모드에 따라 알림 여부를 필터링한 뒤 워치로 전달
+- 폰은 클래스 매핑 후 워치로 전달 (others/미등록은 스킵, 이력에만 저장)
 - direction 값이 없으면(추정 실패) -1로 보낸다
 
 ## class 확정 목록 (2026-07-19, 실내 전용)

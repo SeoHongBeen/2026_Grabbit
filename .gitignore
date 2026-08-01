@@ -74,4 +74,4 @@ local.properties
 
 # macOS / Android Studio
 .DS_Store
-local.properties
+local.properties.gradle/
