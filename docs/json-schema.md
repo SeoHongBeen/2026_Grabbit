@@ -44,3 +44,11 @@ RPi가 소리를 감지하면 아래 형식의 JSON을 폰으로 HTTP POST 한�
 ## 폰 → 워치 (Data Layer, path: /grabbit/alert)
 
 폰이 위 표대로 가공해서 label/color/vibration/direction/rpiTimestamp/phoneTimestamp를 전달한다.
+
+## direction
+- 타입: Int (0~359, 각도)
+- 4분할 표시 (2026.08.02 확정 — v5 모델부터 전방 포함)
+    - 앞: 315~359, 0~44
+    - 오른쪽: 45~134
+    - 뒤: 135~224
+    - 왼쪽: 225~314
