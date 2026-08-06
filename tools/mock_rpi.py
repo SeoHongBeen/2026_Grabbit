@@ -20,7 +20,7 @@ def make_alert():
     cls = random.choice(SOUND_CLASSES)
     return {
         "class": cls,
-        "direction": random.choice([0, 45, 90, 135, 180, 225, 270, 315, -1]),
+        "direction": random.choice([0, 30, 90, 135, 180, 225, 270, 330]),
         "danger": DANGER_MAP[cls],
         "timestamp": int(time.time()),
     }

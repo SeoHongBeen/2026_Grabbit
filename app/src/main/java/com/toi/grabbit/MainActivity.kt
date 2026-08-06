@@ -46,12 +46,13 @@ class MainActivity : AppCompatActivity() {
                     "crackling_fire", "glass_breaking", "siren",
                     "door_wood_knock", "door_wood_creaks", "others"
                 )
-                // 전방(315~44) 제외 — 좌/우/후방만
+                // 4방향(앞/오른쪽/뒤/왼쪽) 균등 랜덤
                 val dir = listOf(
-                    (45..134).random(),
-                    (135..224).random(),
-                    (225..314).random()
-                ).random()
+                    ((315..359) + (0..44)),   // 앞
+                    (45..134).toList(),       // 오른쪽
+                    (135..224).toList(),      // 뒤
+                    (225..314).toList()       // 왼쪽
+                ).random().random()
                 val fake = SoundAlert(
                     `class` = classes.random(),
                     direction = dir,
@@ -136,12 +137,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 각도 → 좌/우/후방 (전방은 사용 안 함) */
-    private fun dirLabel(deg: Int): String = when (deg) {
+    /** 각도 → 앞/오른쪽/뒤/왼쪽 4분할 (v5 모델 front 추가 반영) */
+    private fun dirLabel(deg: Int): String = when (deg % 360) {
         in 45..134 -> "오른쪽"
         in 135..224 -> "뒤쪽"
         in 225..314 -> "왼쪽"
-        else -> "${deg}°"
+        else -> "앞쪽"  // 315~359, 0~44
     }
 
     private fun buildRow(alert: SoundAlert): TextView {
