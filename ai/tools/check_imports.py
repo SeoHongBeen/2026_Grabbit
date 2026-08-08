@@ -21,6 +21,12 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# 윈도우에서 출력을 파이프로 넘기면 stdout이 cp949가 되고, em-dash 같은 문자에서
+# UnicodeEncodeError로 죽는다. 검사는 다 끝났는데 요약을 찍다가 죽으면 결과를 못 본다.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 # 검사할 폴더. record/ 는 RPi에서 단독으로 돌아가야 하므로 함께 봄
 FOLDERS = ["core", "data", "training", "export", "record", "tools"]
 
