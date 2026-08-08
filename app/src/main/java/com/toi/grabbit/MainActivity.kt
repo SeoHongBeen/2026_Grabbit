@@ -1,23 +1,21 @@
 package com.toi.grabbit
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 // RPi가 보내는 JSON 형식 (docs/json-schema.md 참고)
 data class SoundAlert(
@@ -29,73 +27,28 @@ data class SoundAlert(
 
 class MainActivity : AppCompatActivity() {
 
-    private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.KOREA)
+    private lateinit var web: WebView
+    private var pageReady = false
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val statusView = TextView(this).apply {
-            text = "Grabbit 수신 대기중... (포트 ${GrabbitRelayService.PORT})"
-            textSize = 18f
-        }
-
-        val testButton = Button(this).apply {
-            text = "테스트 알림 보내기"
-            setOnClickListener {
-                val classes = listOf(
-                    "crackling_fire", "glass_breaking", "siren",
-                    "door_wood_knock", "door_wood_creaks", "others"
-                )
-                // 4방향(앞/오른쪽/뒤/왼쪽) 균등 랜덤
-                val dir = listOf(
-                    ((315..359) + (0..44)),   // 앞
-                    (45..134).toList(),       // 오른쪽
-                    (135..224).toList(),      // 뒤
-                    (225..314).toList()       // 왼쪽
-                ).random().random()
-                val fake = SoundAlert(
-                    `class` = classes.random(),
-                    direction = dir,
-                    danger = (0..2).random(),
-                    timestamp = System.currentTimeMillis() / 1000
-                )
-                GrabbitRelayService.handleAlert(this@MainActivity, fake)
-            }
-        }
-
-        val clearButton = Button(this).apply {
-            text = "기록 전체 삭제"
-            setOnClickListener { AlertBus.clear(this@MainActivity) }
-        }
-
-        val historyTitle = TextView(this).apply {
-            text = "알림 기록"
-            textSize = 16f
-            setPadding(0, 48, 0, 12)
-        }
-
-        val historyList = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        val scroll = ScrollView(this).apply {
-            addView(historyList)
-        }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(40, 80, 40, 40)
-            addView(statusView)
-            addView(testButton)
-            addView(clearButton)
-            addView(historyTitle)
-            addView(scroll)
-        }
-        setContentView(root)
-
-        // 저장된 이력 복원
+        // 저장된 이력 복원 (WebView 로드 전에)
         AlertBus.restore(this)
+
+        web = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            addJavascriptInterface(JsBridge(), "Android")
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    pageReady = true
+                    pushHistory()
+                }
+            }
+            loadUrl("file:///android_asset/grabbit_ui.html")
+        }
+        setContentView(web)
 
         // 알림 권한 요청 (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -110,59 +63,70 @@ class MainActivity : AppCompatActivity() {
             this, Intent(this, GrabbitRelayService::class.java)
         )
 
-        // 최신 알림 → 상단 상태 표시
+        // 새 알림 → 홈 화면 알림 카드 (drop(1): 복원된 옛 알림으로 시작하자마자 울리지 않게)
         lifecycleScope.launch {
-            AlertBus.latest.collect { alert ->
+            AlertBus.latest.drop(1).collect { alert ->
                 alert ?: return@collect
-                statusView.text =
-                    "소리: ${alert.`class`}\n방향: ${dirLabel(alert.direction)}\n위험도: ${alert.danger}"
+                if (!pageReady) return@collect
+                web.evaluateJavascript(
+                    "onAlert('${alert.`class`}', ${alert.direction}, ${alert.danger}, ${alert.timestamp})",
+                    null
+                )
             }
         }
 
-        // 히스토리 → 리스트 갱신
+        // 히스토리 변경 → 목록/최근 감지 갱신
         lifecycleScope.launch {
-            AlertBus.history.collect { list ->
-                historyList.removeAllViews()
-                if (list.isEmpty()) {
-                    historyList.addView(TextView(this@MainActivity).apply {
-                        text = "아직 감지된 소리가 없어요"
-                        setTextColor(Color.GRAY)
-                    })
-                    return@collect
-                }
-                list.forEach { alert ->
-                    historyList.addView(buildRow(alert))
-                }
+            AlertBus.history.collect {
+                if (pageReady) pushHistory()
             }
         }
     }
 
-    /** 각도 → 앞/오른쪽/뒤/왼쪽 4분할 (v5 모델 front 추가 반영) */
-    private fun dirLabel(deg: Int): String = when (deg % 360) {
-        in 45..134 -> "오른쪽"
-        in 135..224 -> "뒤쪽"
-        in 225..314 -> "왼쪽"
-        else -> "앞쪽"  // 315~359, 0~44
+    /** 현재 히스토리 전체를 JSON으로 만들어 WebView에 전달 */
+    private fun pushHistory() {
+        val arr = JSONArray()
+        AlertBus.history.value.forEach { a ->
+            arr.put(JSONObject().apply {
+                put("cls", a.`class`)
+                put("deg", a.direction)
+                put("danger", a.danger)
+                put("ts", a.timestamp)
+            })
+        }
+        web.evaluateJavascript("setHistory(${JSONObject.quote(arr.toString())})", null)
     }
 
-    private fun buildRow(alert: SoundAlert): TextView {
-        val spec = alertMap[alert.`class`]
-        val label = spec?.label ?: alert.`class`
-        val color = spec?.let { Color.parseColor(it.color) } ?: Color.LTGRAY
-        val time = timeFormat.format(Date(alert.timestamp * 1000))
+    /** HTML 쪽에서 Android.○○○() 로 호출하는 다리 */
+    inner class JsBridge {
 
-        return TextView(this).apply {
-            text = "$time   $label   ${dirLabel(alert.direction)}   위험도 ${alert.danger}"
-            textSize = 15f
-            setPadding(28, 24, 28, 24)
-            setBackgroundColor(color)
-            setTextColor(Color.WHITE)
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+        /** 설정 화면의 '테스트 알림 보내기' — 전체 파이프라인(워치·서버 포함) 테스트 */
+        @JavascriptInterface
+        fun sendTestAlert() {
+            val classes = listOf(
+                "crackling_fire", "glass_breaking", "siren",
+                "door_wood_knock", "door_wood_creaks", "others"
             )
-            lp.setMargins(0, 0, 0, 12)
-            layoutParams = lp
+            // 4방향(앞/오른쪽/뒤/왼쪽) 균등 랜덤
+            val dir = listOf(
+                ((315..359) + (0..44)),   // 앞
+                (45..134).toList(),       // 오른쪽
+                (135..224).toList(),      // 뒤
+                (225..314).toList()       // 왼쪽
+            ).random().random()
+            val fake = SoundAlert(
+                `class` = classes.random(),
+                direction = dir,
+                danger = (0..3).random(),
+                timestamp = System.currentTimeMillis() / 1000
+            )
+            GrabbitRelayService.handleAlert(this@MainActivity, fake)
+        }
+
+        /** 설정 화면의 '기록 전체 삭제' */
+        @JavascriptInterface
+        fun clearHistory() {
+            AlertBus.clear(this@MainActivity)
         }
     }
 }
