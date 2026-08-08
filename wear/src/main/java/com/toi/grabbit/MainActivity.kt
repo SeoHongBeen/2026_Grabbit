@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -103,6 +105,10 @@ fun GrabbitWatchScreen(alertState: MutableState<SoundAlert?>) {
 
     // "others"는 알림 자체를 표시하지 않으므로, 화면에 보여줄 현재 알림이 없을 수도 있음 (nullable)
     var currentAlert by alertState
+
+    // [ADD] mock 테스트 버튼 표시 여부. 기본은 숨김(깔끔한 실제 화면),
+    // 상단 "대기 중" 영역을 길게 누르면 토글됨 — 개발/디버깅용.
+    var showTestPanel by remember { mutableStateOf(false) }
 
     /** mock 버튼용: 파싱/중복제거 후 진동 + 화면 갱신 (실수신과 동일 경로인 AlertProcessor 사용) */
     fun applyMockAlert(json: String) {
@@ -218,10 +224,16 @@ fun GrabbitWatchScreen(alertState: MutableState<SoundAlert?>) {
         }
 
         // 알림 텍스트 — 상단 고정. 알림 없으면 "대기 중" 표시
+        // [ADD] 길게 누르면 하단 mock 테스트 패널 표시/숨김 토글 (개발자용, 화면 안 가림)
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 28.dp),
+                .padding(top = 28.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = { showTestPanel = !showTestPanel }
+                    )
+                },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -240,90 +252,93 @@ fun GrabbitWatchScreen(alertState: MutableState<SoundAlert?>) {
         }
 
         // Mock 테스트 버튼들 (실제 데이터는 MessageClient로도 수신됨)
-        Column(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                listOf(
-                    Triple("crackling_fire", "#FF3B30", "urgent"),
-                    Triple("glass_breaking", "#FF3B30", "urgent"),
-                    Triple("siren", "#FF3B30", "urgent")
-                ).forEach { (label, color, vib) ->
-                    Button(
-                        onClick = {
-                            val mockJson = """
-                                {"eventId":"evt_${System.currentTimeMillis()}",
-                                 "label":"$label",
-                                 "color":"$color",
-                                 "vibration":"$vib",
-                                 "direction":${alert?.direction ?: 0},
-                                 "rpiTimestamp":${System.currentTimeMillis()},
-                                 "phoneTimestamp":${System.currentTimeMillis()}}
-                            """.trimIndent()
-                            applyMockAlert(mockJson)
-                        },
-                        modifier = Modifier.size(28.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(android.graphics.Color.parseColor(color))
-                        )
-                    ) {
-                        Text(label.take(2), fontSize = 8.sp, color = Color.White)
+        // [CHANGE] 기본 숨김. "대기 중" 텍스트 길게 눌러야 나타남 → 평소 화면 안 가림.
+        if (showTestPanel) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    listOf(
+                        Triple("crackling_fire", "#FF3B30", "urgent"),
+                        Triple("glass_breaking", "#FF3B30", "urgent"),
+                        Triple("siren", "#FF3B30", "urgent")
+                    ).forEach { (label, color, vib) ->
+                        Button(
+                            onClick = {
+                                val mockJson = """
+                                    {"eventId":"evt_${System.currentTimeMillis()}",
+                                     "label":"$label",
+                                     "color":"$color",
+                                     "vibration":"$vib",
+                                     "direction":${alert?.direction ?: 0},
+                                     "rpiTimestamp":${System.currentTimeMillis()},
+                                     "phoneTimestamp":${System.currentTimeMillis()}}
+                                """.trimIndent()
+                                applyMockAlert(mockJson)
+                            },
+                            modifier = Modifier.size(28.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                backgroundColor = Color(android.graphics.Color.parseColor(color))
+                            )
+                        ) {
+                            Text(label.take(2), fontSize = 8.sp, color = Color.White)
+                        }
                     }
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                listOf(
-                    Triple("door_wood_knock", "#FF9500", "normal"),
-                    Triple("door_wood_creaks", "#007AFF", "soft"),
-                    Triple("others", "#8E8E93", "none")
-                ).forEach { (label, color, vib) ->
-                    Button(
-                        onClick = {
-                            val mockJson = """
-                                {"eventId":"evt_${System.currentTimeMillis()}",
-                                 "label":"$label",
-                                 "color":"$color",
-                                 "vibration":"$vib",
-                                 "direction":${alert?.direction ?: 0},
-                                 "rpiTimestamp":${System.currentTimeMillis()},
-                                 "phoneTimestamp":${System.currentTimeMillis()}}
-                            """.trimIndent()
-                            applyMockAlert(mockJson)
-                        },
-                        modifier = Modifier.size(28.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(android.graphics.Color.parseColor(color))
-                        )
-                    ) {
-                        Text(label.take(2), fontSize = 8.sp, color = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    listOf(
+                        Triple("door_wood_knock", "#FF9500", "normal"),
+                        Triple("door_wood_creaks", "#007AFF", "soft"),
+                        Triple("others", "#8E8E93", "none")
+                    ).forEach { (label, color, vib) ->
+                        Button(
+                            onClick = {
+                                val mockJson = """
+                                    {"eventId":"evt_${System.currentTimeMillis()}",
+                                     "label":"$label",
+                                     "color":"$color",
+                                     "vibration":"$vib",
+                                     "direction":${alert?.direction ?: 0},
+                                     "rpiTimestamp":${System.currentTimeMillis()},
+                                     "phoneTimestamp":${System.currentTimeMillis()}}
+                                """.trimIndent()
+                                applyMockAlert(mockJson)
+                            },
+                            modifier = Modifier.size(28.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                backgroundColor = Color(android.graphics.Color.parseColor(color))
+                            )
+                        ) {
+                            Text(label.take(2), fontSize = 8.sp, color = Color.White)
+                        }
                     }
                 }
-            }
-            // 각도 테스트 버튼 (0/90/180/270도 + unknown)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(0, 90, 180, 270, -1).forEach { angle ->
-                    Button(
-                        onClick = {
-                            val label = alert?.label ?: "siren"
-                            val color = alert?.color ?: "#FF3B30"
-                            val vib = alert?.vibration ?: "urgent"
-                            val mockJson = """
-                                {"eventId":"evt_${System.currentTimeMillis()}",
-                                 "label":"$label",
-                                 "color":"$color",
-                                 "vibration":"$vib",
-                                 "direction":$angle,
-                                 "rpiTimestamp":${System.currentTimeMillis()},
-                                 "phoneTimestamp":${System.currentTimeMillis()}}
-                            """.trimIndent()
-                            applyMockAlert(mockJson)
-                        },
-                        modifier = Modifier.size(28.dp),
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray)
-                    ) {
-                        Text(if (angle == -1) "?" else "${angle}°", fontSize = 8.sp, color = Color.White)
+                // 각도 테스트 버튼 (0/90/180/270도 + unknown)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(0, 90, 180, 270, -1).forEach { angle ->
+                        Button(
+                            onClick = {
+                                val label = alert?.label ?: "siren"
+                                val color = alert?.color ?: "#FF3B30"
+                                val vib = alert?.vibration ?: "urgent"
+                                val mockJson = """
+                                    {"eventId":"evt_${System.currentTimeMillis()}",
+                                     "label":"$label",
+                                     "color":"$color",
+                                     "vibration":"$vib",
+                                     "direction":$angle,
+                                     "rpiTimestamp":${System.currentTimeMillis()},
+                                     "phoneTimestamp":${System.currentTimeMillis()}}
+                                """.trimIndent()
+                                applyMockAlert(mockJson)
+                            },
+                            modifier = Modifier.size(28.dp),
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray)
+                        ) {
+                            Text(if (angle == -1) "?" else "${angle}°", fontSize = 8.sp, color = Color.White)
+                        }
                     }
                 }
             }
