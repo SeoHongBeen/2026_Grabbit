@@ -1,5 +1,6 @@
-<<<<<<< HEAD
+# ==========================================================
 # Python
+# ==========================================================
 __pycache__/
 *.py[cod]
 *.pyo
@@ -18,26 +19,88 @@ env/
 .ipynb_checkpoints/
 *.ipynb
 
+# librosa 캐시 (자동 재생성)
+ai/joblib/
+
+
+# ==========================================================
 # 데이터셋 (용량 크므로 제외)
+# ==========================================================
 ai/dataset/raw/
 ai/dataset/ESC-50/
+ai/dataset/FSD50K/audio/
+ai/dataset/UrbanSound8K/audio/
+ai/dataset/UrbanSound8K/_parquet/
+
+# 실환경 녹음 (RPi로 직접 녹음한 것)
+ai/dataset/realworld/
+
+# 중단된 다운로드 찌꺼기
+ai/dataset/_downloads/
+
+# 용량 큰 메타데이터
+ai/dataset/FSD50K/clips_info.json
+ai/dataset/FSD50K/ground_truth.zip
+
+# 오디오 파일 전반
 *.wav
 *.mp3
 *.flac
+*.aif
+*.aiff
+*.ogg
+
+# 특징 파일 (data/build_dataset.py, data/build_embeddings.py 가 재생성)
+ai/dataset/mfcc/*.npy
+ai/dataset/mfcc/*.npz
+ai/dataset/mfcc/*.png
+
+# 표 형식 데이터
 *.csv
+*.xlsx
 
+# 예외: 작지만 재현에 꼭 필요한 것
+#   manifest.csv — 어떤 파일이 어느 클래스인지. 지하철 차임 제외 같은
+#                  우리가 내린 판단이 담겨 있어 잃으면 복원이 번거롭다
+!ai/dataset/FSD50K/manifest.csv
+!ai/dataset/UrbanSound8K/manifest.csv
 
-# AI features
+#   임계값·정규화 통계 — 몇백 바이트짜리 배포 설정
+!ai/dataset/mfcc/thresholds_*.npy
+!ai/dataset/mfcc/consecutive_*.npy
+!ai/dataset/mfcc/norm_*.npy
+!ai/dataset/mfcc/test_indices.npy
+
+# AI 구버전 산출물
 ai/features/
 toMFCC.png
 
-# 모델 가중치 (releases로 관리)
+
+# ==========================================================
+# 모델 가중치
+# ==========================================================
 *.pt
 *.pth
 *.onnx
 *.tflite
 
-# Android / Kotlin
+# 예외: RPi에 넘기는 배포 결과물.
+# *.pth 와 *.tflite 를 모두 제외하면 저장소에 학습 결과가 하나도 안 남아,
+# 28GB 데이터를 다시 받아 재학습하지 않는 한 복원할 수 없다.
+!ai/export/grabbit_model.npz
+
+
+# ==========================================================
+# Android / Kotlin (워치)
+# ==========================================================
+*.iml
+.gradle/
+/local.properties
+local.properties
+/build
+/captures
+.externalNativeBuild
+.cxx
 watch/.gradle/
 watch/local.properties
 watch/build/
@@ -46,48 +109,38 @@ watch/app/build/
 *.aab
 *.keystore
 
+
+# ==========================================================
 # 환경변수 / 시크릿
+# ==========================================================
 .env
 *.env
 config/secrets.py
 firebase_key.json
 
-# macOS
+
+# ==========================================================
+# IDE / OS
+# ==========================================================
+.idea/
+.vscode/
+*.iws
 .DS_Store
 .AppleDouble
-
-# Windows
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# IDE
-.idea/
-.vscode/
-*.iml
-*.iws
 
-# 로그
+# ==========================================================
+# 로그 / 임시
+# ==========================================================
 *.log
 backend/logs/*.json
 
+
+# ==========================================================
 # 기타
+# ==========================================================
 *.tmp
 *.bak
-=======
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
->>>>>>> 1574466 (워치 UI 초기 구현 추가)
