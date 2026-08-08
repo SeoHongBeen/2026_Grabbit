@@ -46,6 +46,7 @@ class GrabbitRelayService : Service() {
                 put("timestamp", alert.timestamp)
             }
             val sent = WatchSender.sendAlert(context, rpiJson)
+            LogUploader.upload(alert)   // 백엔드 로그 서버로 전송 (실패해도 무시)
             Log.d(
                 TAG,
                 if (sent) "워치 전송 시도: ${alert.`class`}"
