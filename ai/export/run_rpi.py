@@ -7,7 +7,7 @@ arecord 로 raw 오디오를 받아 5초 버퍼를 굴리며 HOP초마다 판정
 PyAudio 같은 추가 패키지 없이 numpy + tflite-runtime 만 있으면 됨
 
 알림은 폰(Android)이 띄운 Ktor 서버로 HTTP POST 한다.
-스키마는 docs/json-schema.md 그대로:
+스키마는 앱 파트와 합의한 형식 그대로:
 
     POST http://<폰IP>:8080/alert
     {"class": "siren", "direction": 90, "danger": 3, "timestamp": 1752894000}
@@ -32,7 +32,7 @@ import numpy as np
 
 from grabbit import Detector
 
-# 클래스 → 위험도. docs/json-schema.md 의 확정 목록과 같은 값이어야 함
+# 클래스 → 위험도. 앱 파트 확정 목록(2026-07-19)과 같은 값이어야 함
 # (1=낮음, 2=중간, 3=긴급). 여기 없는 클래스는 전송하지 않는다.
 DANGER = {
     "crackling_fire": 3,

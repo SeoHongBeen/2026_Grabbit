@@ -68,7 +68,7 @@ python3 run_rpi.py --device plughw:1,0 --channels 4 --host 192.168.137.42
 
 ## 4. 알림 전송 — 이미 구현되어 있습니다
 
-`on_alert()` 안이 채워져 있습니다. `docs/json-schema.md` 스키마 그대로 폰에 POST 합니다.
+`on_alert()` 안이 채워져 있습니다. 앱 파트와 합의한 형식 그대로 폰에 POST 합니다.
 
 ```
 POST http://<폰IP>:8080/alert     Content-Type: application/json
@@ -101,7 +101,7 @@ def estimate_direction():
 ### 앱 파트에 확인 필요: `doorbell`
 
 모델이 내는 클래스는 `glass_breaking, siren, door_wood_knock, doorbell` 인데
-`docs/json-schema.md` 확정 목록(2026-07-19)에는 `doorbell` 이 없습니다.
+앱 파트 확정 클래스 목록(2026-07-19)에는 `doorbell` 이 없습니다.
 폰의 `AlertSpec.kt` 매핑에도 없어서 **초인종은 POST는 되지만 워치로 안 넘어갑니다**
 (미등록 클래스는 이력만 남기고 스킵). 반대로 확정 목록의 `crackling_fire` 와
 `door_wood_creaks` 는 모델이 내지 않습니다.

@@ -52,7 +52,7 @@ python3 run_rpi.py --device plughw:1,0 --channels 4 --no-send --verbose
 
 ## 알림 전송
 
-`on_alert()` 에 이미 들어 있습니다. `docs/json-schema.md` 그대로 폰에 POST 합니다.
+`on_alert()` 에 이미 들어 있습니다. 앱 파트와 합의한 형식 그대로 폰에 POST 합니다.
 
 ```
 POST http://<폰IP>:8080/alert     Content-Type: application/json

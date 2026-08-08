@@ -13,7 +13,7 @@ YAMNET_TFLITE = os.path.join(HERE, "yamnet.tflite")
 
 
 def _interpreter(path):
-    """tflite-runtime(가벼움) → ai_edge_litert → tensorflow 순으로 시도."""
+    """tflite-runtime(가벼움) → ai_edge_litert → tensorflow 순으로 시도"""
     for mod, attr in (("tflite_runtime.interpreter", "Interpreter"),
                       ("ai_edge_litert.interpreter", "Interpreter"),
                       ("tensorflow", "lite")):
@@ -31,7 +31,7 @@ def _interpreter(path):
 
 
 class Detector:
-    """5초 오디오 → 클래스 확률 → 알림 판정."""
+    """5초 오디오 → 클래스 확률 → 알림 판정"""
 
     def __init__(self, model_npz=MODEL_NPZ, yamnet=YAMNET_TFLITE):
         if not os.path.exists(model_npz):
@@ -88,7 +88,7 @@ class Detector:
     # ------------------------------------------------------------------
 
     def prepare(self, wave):
-        """1차원 파형 → 5초 float32. 학습 때와 같은 규칙."""
+        """1차원 파형 → 5초 float32"""
         y = np.asarray(wave, dtype=np.float32)
 
         if y.ndim > 1:                       # 마이크 어레이 → 모노
@@ -117,7 +117,7 @@ class Detector:
         return self.itp.get_tensor(self.emb_idx)      # (10, 1024)
 
     def classify(self, emb):
-        """임베딩 (T,1024) → 클래스 확률. 앙상블 평균."""
+        """임베딩 (T,1024) → 클래스 확률, 앙상블 평균"""
         x = (emb - self.emb_mean) / self.emb_std
 
         # YamnetHead와 동일: 프레임 평균과 최댓값을 이어붙임
@@ -142,7 +142,7 @@ class Detector:
         return probs / self.n_models
 
     def predict(self, wave):
-        """파형 → (클래스, 확신도, 전체확률)."""
+        """파형 → (클래스, 확신도, 전체확률)"""
         probs = self.classify(self.embed(self.prepare(wave)))
         c = int(np.argmax(probs))
         return c, float(probs[c]), probs
@@ -153,7 +153,7 @@ class Detector:
 
     def should_alert(self, cls, conf, now, cooldown=30.0):
         """
-        이번 판정으로 알림을 울릴지. 상태를 내부에 누적
+        이번 판정으로 알림을 울릴지, 상태를 내부에 누적
 
         연속 조건: 같은 클래스가 consecutive[c]번 연속 나와야 울림
           사이렌처럼 오래 지속되는 소리는 높여도 놓치지 않지만,
