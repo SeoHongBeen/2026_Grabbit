@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="3"><!-- 3초마다 자동 새로고침 -->
+  <title>Grabbit 로그 서버</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; background: #fafafa; }
+    h1 { font-size: 20px; }
+    .meta { color: #666; font-size: 13px; margin-bottom: 12px; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { border: 1px solid #ddd; padding: 6px 10px; font-size: 13px; text-align: center; }
+    th { background: #f0f0f0; }
+    .d3 { background: #ffe0e0; }  /* 위험도 높음 강조 */
+  </style>
+</head>
+<body>
+  <h1>🐰 Grabbit 알림 로그</h1>
+  <div class="meta">총 {{ total }}건 · 3초마다 자동 갱신 · <a href="/logs.json">JSON 보기</a></div>
+  <table>
+    <tr><th>#</th><th>소리</th><th>방향(°)</th><th>위험도</th><th>서버 수신 시각</th></tr>
+    {% for l in logs %}
+    <tr {% if l.danger >= 3 %}class="d3"{% endif %}>
+      <td>{{ l.id }}</td>
+      <td>{{ l.sound_class }}</td>
+      <td>{{ l.direction }}</td>
+      <td>{{ l.danger }}</td>
+      <td>{{ l.received_at|date:"m/d H:i:s" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">아직 로그 없음 — 폰에서 알림이 오면 여기 쌓여요</td></tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

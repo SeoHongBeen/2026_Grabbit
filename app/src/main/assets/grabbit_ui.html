@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Grabbit</title>
+    <style>
+        :root {
+          --safe: #22c55e;
+          --caution: #eab308;
+          --warning: #f97316;
+          --danger: #ef4444;
+          --bg: #0f1117;
+          --card: #1a1d27;
+          --card2: #232736;
+          --text: #f1f2f6;
+          --muted: #8a90a3;
+          --accent: #6366f1;
+          --logo: #a3e635;
+        }
+        .phone[data-theme="light"] {
+          --bg: #f4f5f8;
+          --card: #ffffff;
+          --card2: #eef0f5;
+          --text: #16181f;
+          --muted: #6b7080;
+          --accent: #6366f1;
+          --logo: #65a30d;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Pretendard', -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; }
+        body { background: var(--bg); }
+
+        .phone {
+          width: 100%; height: 100%;
+          background: var(--bg);
+          overflow: hidden;
+          position: relative;
+          display: flex; flex-direction: column;
+        }
+        .screen { flex: 1; overflow-y: auto; display: none; flex-direction: column; }
+        .screen.active { display: flex; }
+
+        /* ===== top bar ===== */
+        .topbar {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 14px 20px 6px;
+        }
+        .topbar .logo { font-size: 18px; font-weight: 800; color: var(--logo); letter-spacing: .5px; }
+        .chips { display: flex; gap: 6px; }
+        .chip {
+          font-size: 11px; padding: 4px 10px; border-radius: 12px; font-weight: 600;
+          background: var(--card2); color: var(--muted); display: flex; align-items: center; gap: 4px;
+        }
+        .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--safe); }
+        .chip.mode { color: var(--text); }
+
+        /* ===== home: status card ===== */
+        .status-wrap { flex: 1; padding: 12px 16px 8px; display: flex; flex-direction: column; }
+        .status-card {
+          flex: 1; border-radius: 28px; background: var(--card);
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          position: relative; overflow: hidden; transition: background .35s;
+          min-height: 320px;
+        }
+        .waves { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+        .waves .ring {
+          position: absolute; border: 2px solid rgba(99,102,241,.35); border-radius: 50%;
+          width: 90px; height: 90px; animation: ripple 3s linear infinite;
+        }
+        .waves .ring:nth-child(2) { animation-delay: 1s; }
+        .waves .ring:nth-child(3) { animation-delay: 2s; }
+        @keyframes ripple {
+          0% { transform: scale(1); opacity: .8; }
+          100% { transform: scale(3.4); opacity: 0; }
+        }
+        .mic-icon {
+          width: 84px; height: 84px; border-radius: 50%; background: var(--card2);
+          display:flex; align-items:center; justify-content:center; z-index: 2;
+        }
+        .idle-label { margin-top: 22px; color: var(--text); font-size: 17px; font-weight: 700; z-index:2; }
+        .idle-sub { margin-top: 6px; color: var(--muted); font-size: 13px; z-index:2; }
+
+        .alert-view { display: none; flex-direction: column; align-items: center; z-index: 3; padding: 20px; text-align:center; }
+        .status-card.alerting .alert-view { display: flex; }
+        .status-card.alerting .waves, .status-card.alerting .mic-icon,
+        .status-card.alerting .idle-label, .status-card.alerting .idle-sub { display: none; }
+        .status-card.alerting { animation: cardpulse 1s ease-in-out infinite; }
+        @keyframes cardpulse { 0%,100% { filter: brightness(1);} 50% { filter: brightness(1.18);} }
+
+        .alert-icon { font-size: 64px; }
+        .alert-name { font-size: 28px; font-weight: 800; color: #fff; margin-top: 10px; text-shadow: 0 2px 8px rgba(0,0,0,.3); }
+        .alert-badge {
+          margin-top: 10px; font-size: 13px; font-weight: 700; padding: 5px 14px; border-radius: 14px;
+          background: rgba(0,0,0,.28); color: #fff;
+        }
+        .direction { margin-top: 18px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .direction .arrow { font-size: 44px; color: #fff; animation: bounce .8s infinite; }
+        @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        .direction .dir-label { font-size: 15px; font-weight: 700; color: rgba(255,255,255,.92); }
+
+        .recent-strip { padding: 10px 16px 10px; }
+        .recent-strip .label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+        .recent-items { display: flex; gap: 8px; overflow-x: auto; }
+        .recent-pill {
+          flex-shrink: 0; display: flex; align-items: center; gap: 6px;
+          background: var(--card); border-radius: 14px; padding: 8px 12px; font-size: 12px; color: var(--text);
+        }
+        .rdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+        /* ===== history ===== */
+        .hist-header { padding: 14px 20px 8px; }
+        .hist-header h2 { color: var(--text); font-size: 20px; font-weight: 800; }
+        .filters { display: flex; gap: 6px; padding: 8px 20px 4px; flex-wrap: wrap; }
+        .fchip {
+          font-size: 12px; padding: 5px 12px; border-radius: 14px; background: var(--card);
+          color: var(--muted); font-weight: 600; cursor: pointer; border: 1px solid transparent;
+        }
+        .fchip.on { color: #fff; background: var(--accent); }
+        .hist-list { padding: 8px 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+        .day-label { font-size: 12px; color: var(--muted); font-weight: 700; margin: 8px 4px 2px; }
+        .hempty { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 0; }
+        .hitem {
+          background: var(--card); border-radius: 16px; padding: 12px 14px;
+          display: flex; align-items: center; gap: 12px;
+        }
+        .hitem .hdot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .hitem .hbody { flex: 1; }
+        .hitem .hname { color: var(--text); font-size: 14px; font-weight: 700; }
+        .hitem .hmeta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+        .hitem .htime { color: var(--muted); font-size: 12px; }
+        .hitem.others { opacity: .55; }
+        .hitem .watch-tag { font-size: 10px; background: var(--card2); color: var(--muted); border-radius: 8px; padding: 2px 7px; margin-left: 6px; font-weight:600;}
+        .hitem .watch-tag.sent { color: var(--safe); }
+
+        /* ===== settings ===== */
+        .set-header { padding: 14px 20px 8px; }
+        .set-header h2 { color: var(--text); font-size: 20px; font-weight: 800; }
+        .set-group { margin: 10px 16px; background: var(--card); border-radius: 18px; overflow: hidden; }
+        .set-group .g-label { font-size: 12px; color: var(--muted); font-weight: 700; padding: 12px 16px 4px; }
+        .srow {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 12px 16px; border-top: 1px solid rgba(255,255,255,.04);
+        }
+        .srow:first-of-type { border-top: none; }
+        .srow .sname { color: var(--text); font-size: 14px; font-weight: 600; }
+        .srow .ssub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+        .toggle {
+          width: 44px; height: 26px; border-radius: 13px; background: #3a3f52; position: relative;
+          cursor: pointer; transition: background .2s; flex-shrink: 0;
+        }
+        .toggle::after {
+          content:''; position: absolute; width: 20px; height: 20px; border-radius: 50%;
+          background: #fff; top: 3px; left: 3px; transition: left .2s;
+        }
+        .toggle.on { background: var(--accent); }
+        .toggle.on::after { left: 21px; }
+        .test-btn {
+          margin: 4px 16px 8px; padding: 14px; border-radius: 16px; border: none; width: calc(100% - 32px);
+          background: var(--accent); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
+        }
+        .clear-btn {
+          margin: 0 16px 16px; padding: 14px; border-radius: 16px; border: none; width: calc(100% - 32px);
+          background: var(--card2); color: var(--muted); font-size: 14px; font-weight: 700; cursor: pointer;
+        }
+
+        /* ===== bottom nav ===== */
+        .navbar {
+          height: 64px; background: var(--card); display: flex; flex-shrink: 0;
+          border-top: 1px solid rgba(255,255,255,.05);
+        }
+        .navbar button {
+          flex: 1; background: none; border: none; color: var(--muted); font-size: 11px; font-weight: 600;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer;
+        }
+        .navbar button .nicon { font-size: 20px; }
+        .navbar button.on { color: var(--accent); }
+
+        /* ===== flash overlay (청각장애인 접근성 — 시각 강조) ===== */
+        .flash-overlay {
+          position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 10;
+        }
+        .flash-overlay.flashing { animation: screenflash .5s ease-in-out 3; }
+        @keyframes screenflash {
+          0%, 100% { opacity: 0; }
+          50% { opacity: .55; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="phone" id="phone" data-theme="dark">
+
+    <!-- ============ HOME ============ -->
+    <div class="screen active" id="scr-home">
+        <div class="topbar">
+            <div class="logo">Grabbit</div>
+            <div class="chips">
+                <div class="chip mode">🏠 실내</div>
+                <div class="chip"><div class="dot"></div>수신 대기중</div>
+            </div>
+        </div>
+
+        <div class="status-wrap">
+            <div class="status-card" id="statusCard">
+                <div class="waves"><div class="ring"></div><div class="ring"></div><div class="ring"></div></div>
+                <div class="mic-icon">
+                    <svg width="40" height="28" viewBox="0 0 40 28" fill="none">
+                        <rect x="0"  y="10" width="4" height="8"  rx="2" fill="var(--accent)"/>
+                        <rect x="7"  y="4"  width="4" height="20" rx="2" fill="var(--accent)"/>
+                        <rect x="14" y="0"  width="4" height="28" rx="2" fill="var(--accent)"/>
+                        <rect x="21" y="4"  width="4" height="20" rx="2" fill="var(--accent)"/>
+                        <rect x="28" y="8"  width="4" height="12" rx="2" fill="var(--accent)"/>
+                        <rect x="35" y="11" width="4" height="6"  rx="2" fill="var(--accent)"/>
+                    </svg>
+                </div>
+                <div class="idle-label">주변 소리 감지 중</div>
+                <div class="idle-sub">위험 소리가 감지되면 알려드려요</div>
+
+                <div class="alert-view">
+                    <div class="alert-icon" id="aIcon"></div>
+                    <div class="alert-name" id="aName"></div>
+                    <div class="alert-badge" id="aBadge"></div>
+                    <div class="direction" id="aDir">
+                        <div class="arrow" id="aArrow"></div>
+                        <div class="dir-label" id="aDirLabel"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="recent-strip">
+            <div class="label">최근 감지</div>
+            <div class="recent-items" id="recentItems"></div>
+        </div>
+    </div>
+
+    <!-- ============ HISTORY ============ -->
+    <div class="screen" id="scr-history">
+        <div class="hist-header"><h2>알림 히스토리</h2></div>
+        <div class="filters">
+            <div class="fchip on" onclick="filterHistory(this,'전체')">전체</div>
+            <div class="fchip" onclick="filterHistory(this,'매우 높음')">매우 높음</div>
+            <div class="fchip" onclick="filterHistory(this,'높음')">높음</div>
+            <div class="fchip" onclick="filterHistory(this,'중간')">중간</div>
+            <div class="fchip" onclick="filterHistory(this,'낮음')">낮음</div>
+            <div class="fchip" onclick="filterHistory(this,'기타')">기타</div>
+        </div>
+        <div class="hist-list" id="histList"></div>
+    </div>
+
+    <!-- ============ SETTINGS ============ -->
+    <div class="screen" id="scr-settings">
+        <div class="set-header"><h2>설정</h2></div>
+
+        <div class="set-group">
+            <div class="g-label">화면</div>
+            <div class="srow">
+                <div><div class="sname">다크 모드</div><div class="ssub">어두운 배경으로 표시</div></div>
+                <div class="toggle on" onclick="toggleTheme(this)"></div>
+            </div>
+        </div>
+
+        <div class="set-group">
+            <div class="g-label">모드</div>
+            <div class="srow">
+                <div><div class="sname">실내 전용 모드</div><div class="ssub">현재 버전은 실내 전용</div></div>
+            </div>
+        </div>
+
+        <div class="set-group">
+            <div class="g-label">소리별 알림</div>
+            <div class="srow"><div class="sname">🔥 화재 소리</div><div class="toggle on" data-sound="crackling_fire" onclick="this.classList.toggle('on')"></div></div>
+            <div class="srow"><div class="sname">💥 유리 깨짐</div><div class="toggle on" data-sound="glass_breaking" onclick="this.classList.toggle('on')"></div></div>
+            <div class="srow"><div class="sname">🚨 사이렌</div><div class="toggle on" data-sound="siren" onclick="this.classList.toggle('on')"></div></div>
+            <div class="srow"><div class="sname">✊ 노크 소리</div><div class="toggle on" data-sound="door_wood_knock" onclick="this.classList.toggle('on')"></div></div>
+            <div class="srow"><div class="sname">🚪 문 소리</div><div class="toggle on" data-sound="door_wood_creaks" onclick="this.classList.toggle('on')"></div></div>
+        </div>
+
+        <div class="set-group">
+            <div class="g-label">테스트</div>
+            <div class="srow"><div><div class="sname">테스트 알림</div><div class="ssub">무작위 소리로 전체 파이프라인 테스트 (워치·서버 포함)</div></div></div>
+        </div>
+        <button class="test-btn" onclick="Android.sendTestAlert(); go('home', document.querySelectorAll('.navbar button')[0])">테스트 알림 보내기</button>
+        <button class="clear-btn" onclick="Android.clearHistory()">기록 전체 삭제</button>
+    </div>
+
+    <div class="navbar">
+        <button class="on" onclick="go('home',this)"><span class="nicon">🏠</span>홈</button>
+        <button onclick="go('history',this)"><span class="nicon">🕓</span>히스토리</button>
+        <button onclick="go('settings',this)"><span class="nicon">⚙️</span>설정</button>
+    </div>
+    <div class="flash-overlay" id="flashOverlay"></div>
+</div>
+
+<script>
+    // ===== 소리 클래스 → 표시 정보 (AlertSpec.kt와 동일 체계) =====
+    const CLASS_INFO = {
+      crackling_fire:   { name: '화재 소리',  icon: '🔥' },
+      glass_breaking:   { name: '유리 깨짐',  icon: '💥' },
+      siren:            { name: '사이렌',     icon: '🚨' },
+      door_wood_knock:  { name: '노크 소리',  icon: '✊' },
+      door_wood_creaks: { name: '문 소리',    icon: '🚪' },
+      others:           { name: '기타 소리',  icon: '🔊' }
+    };
+    // ===== 중요도(danger 0~3) → 라벨/색 (워치 색 체계와 동일) =====
+    const LEVELS = [
+      { label: '낮음',      color: '#22c55e' },
+      { label: '중간',      color: '#eab308' },
+      { label: '높음',      color: '#f97316' },
+      { label: '매우 높음', color: '#ef4444' }
+    ];
+    function levelOf(d) { return LEVELS[Math.min(Math.max(d, 0), 3)]; }
+    function infoOf(cls) { return CLASS_INFO[cls] || CLASS_INFO.others; }
+    function dirOf(deg) {
+      const d = ((deg % 360) + 360) % 360;
+      if (d >= 45  && d <= 134) return { arrow: '→', label: '오른쪽' };
+      if (d >= 135 && d <= 224) return { arrow: '↓', label: '뒤쪽' };
+      if (d >= 225 && d <= 314) return { arrow: '←', label: '왼쪽' };
+      return { arrow: '↑', label: '앞쪽' };
+    }
+
+    let alertTimer = null;
+    let historyData = [];   // [{cls, deg, danger, ts(초)}] 최신순
+    let currentFilter = '전체';
+
+    function go(name, btn) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('scr-' + name).classList.add('active');
+      document.querySelectorAll('.navbar button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+    }
+
+    // ===== 앱(Kotlin)이 호출: 새 알림 =====
+    function onAlert(cls, deg, danger, ts) {
+      if (cls === 'others') return;   // 기타 소리는 홈 알림 없이 히스토리에만
+      const toggle = document.querySelector('.toggle[data-sound="' + cls + '"]');
+      if (toggle && !toggle.classList.contains('on')) return;  // 설정에서 끈 소리
+
+      const info = infoOf(cls), lv = levelOf(danger), dir = dirOf(deg);
+      const card = document.getElementById('statusCard');
+      document.getElementById('aIcon').textContent = info.icon;
+      document.getElementById('aName').textContent = info.name;
+      document.getElementById('aBadge').textContent = '중요도: ' + lv.label;
+      document.getElementById('aArrow').textContent = dir.arrow;
+      document.getElementById('aDirLabel').textContent = dir.label;
+      card.style.background = lv.color;
+      card.classList.add('alerting');
+      clearTimeout(alertTimer);
+      alertTimer = setTimeout(clearAlert, 6000);
+
+      const flash = document.getElementById('flashOverlay');
+      flash.style.background = lv.color;
+      flash.classList.remove('flashing');
+      void flash.offsetWidth;
+      flash.classList.add('flashing');
+
+      if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+    }
+
+    function clearAlert() {
+      const card = document.getElementById('statusCard');
+      card.classList.remove('alerting');
+      card.style.background = '';
+      clearTimeout(alertTimer);
+    }
+
+    // ===== 앱(Kotlin)이 호출: 히스토리 전체 갱신 =====
+    function setHistory(jsonStr) {
+      try { historyData = JSON.parse(jsonStr); } catch (e) { historyData = []; }
+      renderRecent();
+      renderHistory();
+    }
+
+    function timeStr(ts) {
+      const d = new Date(ts * 1000);
+      return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    }
+    function agoStr(ts) {
+      const s = Math.floor(Date.now() / 1000) - ts;
+      if (s < 60) return '방금';
+      if (s < 3600) return Math.floor(s / 60) + '분 전';
+      if (s < 86400) return Math.floor(s / 3600) + '시간 전';
+      return Math.floor(s / 86400) + '일 전';
+    }
+    function dayGroup(ts) {
+      const d = new Date(ts * 1000), now = new Date();
+      const day = (x) => x.getFullYear() + '-' + x.getMonth() + '-' + x.getDate();
+      const yest = new Date(now); yest.setDate(now.getDate() - 1);
+      if (day(d) === day(now)) return '오늘';
+      if (day(d) === day(yest)) return '어제';
+      return '이전';
+    }
+
+    function renderRecent() {
+      const wrap = document.getElementById('recentItems');
+      wrap.innerHTML = '';
+      if (historyData.length === 0) {
+        wrap.innerHTML = '<div class="recent-pill" style="color:var(--muted)">아직 감지된 소리가 없어요</div>';
+        return;
+      }
+      historyData.slice(0, 3).forEach(h => {
+        const pill = document.createElement('div');
+        pill.className = 'recent-pill';
+        pill.innerHTML = '<div class="rdot" style="background:' + levelOf(h.danger).color + '"></div>'
+          + infoOf(h.cls).name + ' · ' + agoStr(h.ts);
+        wrap.appendChild(pill);
+      });
+    }
+
+    function renderHistory() {
+      const list = document.getElementById('histList');
+      list.innerHTML = '';
+      let shown = historyData;
+      if (currentFilter === '기타') shown = historyData.filter(h => h.cls === 'others');
+      else if (currentFilter !== '전체') shown = historyData.filter(h => h.cls !== 'others' && levelOf(h.danger).label === currentFilter);
+
+      if (shown.length === 0) {
+        list.innerHTML = '<div class="hempty">해당하는 알림이 없어요</div>';
+        return;
+      }
+      let lastDay = null;
+      shown.forEach(h => {
+        const g = dayGroup(h.ts);
+        if (g !== lastDay) {
+          lastDay = g;
+          const dl = document.createElement('div');
+          dl.className = 'day-label';
+          dl.textContent = g;
+          list.appendChild(dl);
+        }
+        const info = infoOf(h.cls), lv = levelOf(h.danger), dir = dirOf(h.deg);
+        const isOthers = h.cls === 'others' || !CLASS_INFO[h.cls];
+        const item = document.createElement('div');
+        item.className = 'hitem' + (isOthers ? ' others' : '');
+        const tag = isOthers
+          ? '<span class="watch-tag">폰에만 기록</span>'
+          : '<span class="watch-tag sent">⌚ 워치 전송</span>';
+        const meta = isOthers ? ('분류: ' + h.cls) : (dir.label + ' · ' + lv.label);
+        item.innerHTML =
+          '<div class="hdot" style="background:' + (isOthers ? '#5b6072' : lv.color) + '"></div>'
+          + '<div class="hbody"><div class="hname">' + info.name + ' ' + tag + '</div>'
+          + '<div class="hmeta">' + meta + '</div></div>'
+          + '<div class="htime">' + timeStr(h.ts) + '</div>';
+        list.appendChild(item);
+      });
+    }
+
+    function filterHistory(chip, level) {
+      document.querySelectorAll('.fchip').forEach(c => c.classList.remove('on'));
+      chip.classList.add('on');
+      currentFilter = level;
+      renderHistory();
+    }
+
+    function toggleTheme(toggleEl) {
+      const isDark = toggleEl.classList.toggle('on');
+      document.getElementById('phone').dataset.theme = isDark ? 'dark' : 'light';
+    }
+
+    // 초기 렌더 (앱이 setHistory를 곧 호출하지만, 빈 상태도 보기 좋게)
+    renderRecent();
+    renderHistory();
+</script>
+</body>
+</html>
