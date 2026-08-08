@@ -1,9 +1,10 @@
 package com.toi.grabbit
 
-import android.content.Context
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,84 +27,100 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Text
+import com.toi.grabbit.model.AlertEffects
 import com.toi.grabbit.model.AlertListenerService
+import com.toi.grabbit.model.AlertProcessor
 import com.toi.grabbit.model.DirectionMap
 import com.toi.grabbit.model.LabelMap
 import com.toi.grabbit.model.SoundAlert
 import com.toi.grabbit.model.SoundAlertParser
-import com.toi.grabbit.model.VibrationTypeMap
+import kotlinx.coroutines.delay
 
 private const val TAG = "Grabbit"
 
-// 최근 처리한 eventId들을 기억 (Set 기반, 최대 20개까지 유지 - 중복 알림 방지용)
-private val recentEventIds = ArrayDeque<String>()
-private const val MAX_RECENT_EVENTS = 20
+// 알림 자동 해제까지의 시간 (ms)
+private const val AUTO_DISMISS_MS = 8_000L
+private const val URGENT_DISMISS_MS = 12_000L
 
 class MainActivity : ComponentActivity() {
+
+    // 화면에 표시할 현재 알림. 액티비티에서 hoisting해서
+    // 서비스 콜백 / 인텐트 extra / mock 버튼 어디서 와도 여기로 모임.
+    private val alertState = mutableStateOf<SoundAlert?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 워치 화면이 꺼져 있거나 잠금 상태여도 알림 수신 시 화면을 켜고 위에 표시
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+
+        requestNotificationPermissionIfNeeded()
+        handleAlertIntent(intent)
+
         setContent {
-            GrabbitWatchScreen()
+            GrabbitWatchScreen(alertState)
         }
     }
-}
 
-/** vibration이 "none"이면 진동 자체를 실행하지 않음 */
-fun triggerVibration(context: Context, vibration: String) {
-    if (vibration == "none") {
-        Log.d(TAG, "진동 스킵 (vibration=none)")
-        return
-    }
-    val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-    val pattern = VibrationTypeMap.patternFor(vibration)
-    vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
-    Log.d(TAG, "진동 실행: vibration=$vibration")
-}
-
-fun handleIncomingJson(json: String, onSuccess: (SoundAlert) -> Unit) {
-    Log.d(TAG, "수신 JSON: $json")
-    val alert = SoundAlertParser.parse(json)
-    if (alert == null) {
-        Log.w(TAG, "파싱 실패 또는 유효하지 않은 값 - 무시함")
-        return
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // launchMode="singleTop"이라 백그라운드 수신으로 재실행되면 여기로 들어옴
+        handleAlertIntent(intent)
     }
 
-    if (recentEventIds.contains(alert.eventId)) {
-        Log.d(TAG, "중복 eventId 감지 (${alert.eventId}) - 무시함")
-        return
-    }
-    recentEventIds.addLast(alert.eventId)
-    if (recentEventIds.size > MAX_RECENT_EVENTS) {
-        recentEventIds.removeFirst()
+    /**
+     * 백그라운드 수신 시 AlertListenerService가 넘겨준 alert JSON 처리.
+     * 서비스에서 이미 파싱 검증/중복 제거/진동까지 끝낸 상태이므로
+     * 여기서는 표시용 파싱만 다시 해서 화면에 반영.
+     */
+    private fun handleAlertIntent(intent: Intent?) {
+        val json = intent?.getStringExtra(EXTRA_ALERT_JSON) ?: return
+        intent.removeExtra(EXTRA_ALERT_JSON) // 회전/재생성 시 중복 처리 방지
+        val alert = SoundAlertParser.parse(json) ?: return
+        if (alert.label == "others") return
+        Log.d(TAG, "인텐트로 alert 수신: ${alert.label}")
+        alertState.value = alert
     }
 
-    Log.d(TAG, "파싱 성공: eventId=${alert.eventId}, label=${alert.label}, color=${alert.color}, vibration=${alert.vibration}, direction=${alert.direction}")
-    onSuccess(alert)
+    /** 백그라운드 수신 안전망(시스템 알림)을 위해 알림 권한 요청 (Wear OS 4 / API 33+) */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+    }
+
+    companion object {
+        const val EXTRA_ALERT_JSON = "extra_alert_json"
+    }
 }
 
 @Composable
-fun GrabbitWatchScreen() {
+fun GrabbitWatchScreen(alertState: MutableState<SoundAlert?>) {
     val context = LocalContext.current
 
     // "others"는 알림 자체를 표시하지 않으므로, 화면에 보여줄 현재 알림이 없을 수도 있음 (nullable)
-    var currentAlert by remember { mutableStateOf<SoundAlert?>(null) }
+    var currentAlert by alertState
 
-    fun applyAlert(json: String) {
-        handleIncomingJson(json) { alert ->
-            if (alert.label == "others") {
-                // others는 화면 표시/진동 없이 조용히 무시 (currentAlert 갱신 안 함)
-                Log.d(TAG, "others 클래스 - 알림 표시 생략")
-                return@handleIncomingJson
-            }
-            currentAlert = alert
-            triggerVibration(context, alert.vibration)
+    /** mock 버튼용: 파싱/중복제거 후 진동 + 화면 갱신 (실수신과 동일 경로인 AlertProcessor 사용) */
+    fun applyMockAlert(json: String) {
+        val alert = AlertProcessor.process(json) ?: return
+        if (alert.label == "others") {
+            // others는 화면 표시/진동 없이 조용히 무시 (currentAlert 갱신 안 함)
+            Log.d(TAG, "others 클래스 - 알림 표시 생략")
+            return
         }
+        AlertEffects.vibrate(context, alert.vibration)
+        currentAlert = alert
     }
 
     // MessageClient(폰 relay)로 수신된 alert를 화면에 반영
+    // (진동/중복제거는 서비스에서 이미 처리됨 - 여기선 화면 갱신만)
     DisposableEffect(Unit) {
-        AlertListenerService.onAlertReceived = { json ->
-            applyAlert(json)
+        AlertListenerService.onAlertReceived = { alert ->
+            currentAlert = alert
         }
         onDispose {
             AlertListenerService.onAlertReceived = null
@@ -111,6 +128,17 @@ fun GrabbitWatchScreen() {
     }
 
     val alert = currentAlert
+
+    // 알림 자동 해제: 일정 시간이 지나면 "대기 중"으로 복귀
+    // (urgent는 조금 더 길게 유지)
+    LaunchedEffect(alert?.eventId) {
+        if (alert != null) {
+            delay(if (alert.vibration == "urgent") URGENT_DISMISS_MS else AUTO_DISMISS_MS)
+            currentAlert = null
+            Log.d(TAG, "알림 자동 해제 → 대기 중 복귀")
+        }
+    }
+
     val baseColor = alert?.let { Color(android.graphics.Color.parseColor(it.color)) } ?: Color.DarkGray
 
     // vibration이 urgent일 때만 점멸
@@ -234,7 +262,7 @@ fun GrabbitWatchScreen() {
                                  "rpiTimestamp":${System.currentTimeMillis()},
                                  "phoneTimestamp":${System.currentTimeMillis()}}
                             """.trimIndent()
-                            applyAlert(mockJson)
+                            applyMockAlert(mockJson)
                         },
                         modifier = Modifier.size(28.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -262,7 +290,7 @@ fun GrabbitWatchScreen() {
                                  "rpiTimestamp":${System.currentTimeMillis()},
                                  "phoneTimestamp":${System.currentTimeMillis()}}
                             """.trimIndent()
-                            applyAlert(mockJson)
+                            applyMockAlert(mockJson)
                         },
                         modifier = Modifier.size(28.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -290,7 +318,7 @@ fun GrabbitWatchScreen() {
                                  "rpiTimestamp":${System.currentTimeMillis()},
                                  "phoneTimestamp":${System.currentTimeMillis()}}
                             """.trimIndent()
-                            applyAlert(mockJson)
+                            applyMockAlert(mockJson)
                         },
                         modifier = Modifier.size(28.dp),
                         colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray)
