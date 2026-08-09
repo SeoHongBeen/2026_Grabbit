@@ -18,6 +18,7 @@ arecord 로 raw 오디오를 받아 5초 버퍼를 굴리며 HOP초마다 판정
     python3 run_rpi.py --no-send                      전송 없이 화면 출력만
 """
 import argparse
+import collections
 import json
 import os
 import queue
@@ -293,6 +294,47 @@ def open_mic(device, sr, channels):
         sys.exit("arecord 가 없습니다 → sudo apt install alsa-utils")
 
 
+def drain_stderr(proc, keep=50, show=3):
+    """
+    arecord 의 stderr 를 계속 비운다. 반환값은 마지막 몇 줄을 담은 deque
+
+    비우지 않으면 파이프(64KB)가 차는 순간 arecord 가 stderr 쓰기에서 막히고,
+    그러면 오디오도 더 안 나와서 판정 루프가 통째로 얼어붙는다. 화면에는
+    "듣는 중..." 만 남고 아무 일도 일어나지 않는다.
+
+    RPi 가 판정을 못 따라가면 arecord 가 overrun 경고를 계속 뱉으므로
+    이건 가정이 아니라 실제로 도달하는 상태다. 앞 몇 줄은 화면에도 보여준다
+    — 느려서 밀리는 중이라는 가장 빠른 신호이기 때문
+    """
+    lines = collections.deque(maxlen=keep)
+
+    def run():
+        buf = b""
+        while True:
+            try:
+                chunk = proc.stderr.read(4096)
+            except Exception:
+                return
+            if not chunk:
+                break
+            buf += chunk
+            parts = buf.replace(b"\r", b"\n").split(b"\n")
+            buf = parts.pop()
+            for p in parts:
+                s = p.decode("utf-8", "replace").strip()
+                if not s:
+                    continue
+                if len(lines) < show:
+                    print("  [arecord] %s" % s, flush=True)
+                lines.append(s)
+
+        if buf.strip():
+            lines.append(buf.decode("utf-8", "replace").strip())
+
+    threading.Thread(target=run, daemon=True).start()
+    return lines
+
+
 def read_exact(stream, n):
     """
     파이프에서 정확히 n바이트를 모아 돌려준다. 녹음이 끝났으면 None
@@ -374,6 +416,7 @@ def main():
 
     sender = None if args.no_send else AlertSender(args.host, args.port, args.timeout)
     mic = open_mic(args.device, det.sr, args.channels)
+    mic_err = drain_stderr(mic)
 
     buf = np.zeros(det.clip_len, dtype=np.float32)
     hop_frames = int(args.hop * det.sr)
@@ -392,13 +435,13 @@ def main():
         while True:
             raw = read_exact(mic.stdout, need)
             if raw is None:
-                # arecord 를 먼저 죽여야 stderr 가 EOF 로 닫힌다 (안 그러면 read 가 멈춤)
                 mic.terminate()
-                try:
-                    err = mic.stderr.read().decode("utf-8", "replace").strip()
+                try:                          # 마지막 stderr 가 도착할 짬을 준다
+                    mic.wait(timeout=1.0)
                 except Exception:
-                    err = ""
-                sys.exit("녹음이 끊겼습니다.\n%s\n장치 이름을 확인하세요 (arecord -l)" % err)
+                    pass
+                sys.exit("녹음이 끊겼습니다.\n%s\n장치 이름을 확인하세요 (arecord -l)"
+                         % "\n".join(mic_err))
 
             samples = np.frombuffer(raw, dtype=np.int16)
 
