@@ -1,6 +1,6 @@
 # RPi 배포 패키지
 
-라즈베리파이에서 마이크를 듣고 위험음을 감지합니다.
+라즈베리파이에서 마이크를 듣고 위험음을 감지하고, 소리가 난 방향을 추정합니다.
 **PyTorch·TensorFlow 없이** numpy + tflite-runtime 만으로 돌아갑니다.
 
 ## RPi에 복사할 파일
@@ -11,18 +11,33 @@ export/
   run_rpi.py           실시간 실행
   grabbit_model.npz    학습된 분류기 + 임계값 + 전처리 설정  (11 MB)
   yamnet.tflite        YAMNet 특징 추출기                    (16 MB)
+
+rpi/                   ← 방향 추정(DoA). 4채널 어레이를 쓸 때만 필요
+  doa_knn_model_v5.pkl (18 KB)
+  doa_scaler.pkl       (1 KB)
 ```
 
 `export_model.py` 는 PC에서만 쓰는 도구라 복사하지 않아도 됩니다.
+
+DoA 파일 두 개는 `run_rpi.py` 와 같은 폴더에 둬도 되고, 저장소 배치
+(`<repo>/rpi/`)를 그대로 유지해도 됩니다. 둘 다 아니면 `--doa-model`,
+`--doa-scaler` 로 경로를 지정하세요.
 
 ## 설치
 
 ```bash
 pip install numpy tflite-runtime
-sudo apt install alsa-utils          # arecord
+sudo apt install alsa-utils                     # arecord
+
+# 방향 추정을 쓸 때만
+pip install joblib scipy "scikit-learn==1.6.1"
 ```
 
 `tflite-runtime` 설치가 안 되면 `pip install tensorflow` 도 됩니다(무겁습니다).
+
+**scikit-learn 버전을 맞추세요.** pkl 은 1.6.1 에서 만들어졌고, 다른 버전에서
+풀면 sklearn 이 `InconsistentVersionWarning` 을 내면서도 그냥 로드합니다 —
+경고만 뜨고 방향이 조용히 틀릴 수 있습니다.
 
 ## 실행
 
@@ -31,10 +46,10 @@ sudo apt install alsa-utils          # arecord
 arecord -l
 
 # 실행 (마이크 어레이면 --channels 4, --host 는 폰 IP)
-python3 run_rpi.py --device plughw:1,0 --channels 4 --host 192.168.137.42
+python3 run_rpi.py --device plughw:0,0 --channels 4 --host 192.168.137.42
 
 # 전송 없이 마이크·모델만 점검
-python3 run_rpi.py --device plughw:1,0 --channels 4 --no-send --verbose
+python3 run_rpi.py --device plughw:0,0 --channels 4 --no-send --verbose
 ```
 
 옵션:
@@ -42,13 +57,16 @@ python3 run_rpi.py --device plughw:1,0 --channels 4 --no-send --verbose
 | 옵션 | 기본 | 설명 |
 |---|---|---|
 | `--device` | 기본 장치 | `arecord -l` 로 확인한 이름 |
-| `--channels` | 1 | 마이크 어레이면 채널 수 (평균내어 모노로 씀) |
-| `--hop` | 1.0 | 몇 초마다 판정할지 |
+| `--channels` | 1 | 마이크 어레이면 채널 수. 분류는 평균내어 모노로 씀 |
+| `--hop` | 0.48 | 몇 초마다 판정할지. **바꾸기 전에 아래 설명을 읽으세요** |
 | `--cooldown` | 30.0 | 같은 알림을 다시 울리기까지 최소 간격(초) |
 | `--host` | 127.0.0.1 | 알림을 받을 폰의 IP |
 | `--port` | 8080 | 폰 Ktor 서버 포트 |
 | `--timeout` | 2.0 | 전송 타임아웃(초) |
 | `--no-send` | 꺼짐 | 전송하지 않고 화면 출력만 |
+| `--doa-model` | 자동 탐색 | `doa_knn_model_v5.pkl` 경로 |
+| `--doa-scaler` | 자동 탐색 | `doa_scaler.pkl` 경로 |
+| `--no-doa` | 꺼짐 | 방향 추정을 끄고 `-1` 로 보냄 |
 
 ## 알림 전송
 
@@ -62,52 +80,84 @@ POST http://<폰IP>:8080/alert     Content-Type: application/json
 전송은 별도 스레드라 판정 루프를 막지 않고, 네트워크가 죽어도 감지는 계속됩니다
 (실패는 세기만 하고 종료 시 성공/실패 횟수를 출력).
 
-`direction` 은 DoA 파트가 붙기 전까지 `-1`(unknown) 입니다.
-붙일 때 `estimate_direction()` 한 곳만 바꾸면 됩니다.
+## 알림이 울리는 기준
+
+관문 여섯 개를 **순서대로 전부** 통과해야 알림이 나갑니다.
+
+1. 그 창에서 해당 클래스가 **1등(argmax)** 일 것
+2. 1등 확률이 **클래스별 임계값** 이상일 것
+3. 1·2를 **연속 N회** 통과할 것 (한 창이라도 끊기면 1로 리셋)
+4. 같은 클래스의 마지막 알림에서 **쿨다운(30초)** 이 지났을 것
+5. `run_rpi.py` 의 `DANGER` 표에 있는 클래스일 것
+6. 폰 `AlertSpec.kt` 의 `alertMap` 에 있는 클래스일 것
+
+**1번을 자주 놓칩니다.** 임계값은 "그 클래스의 확률"이 아니라 "1등 확률"에
+걸립니다. siren 0.45 / others 0.50 이면 siren 이 0.30 을 넘었어도 1등이 아니라
+세지 않습니다. `--verbose` 로 확인할 수 있습니다.
 
 ## 감지하는 소리
 
-| 클래스 | 임계값 | 연속 조건 |
-|---|---|---|
-| `glass_breaking` | 0.30 | 2회 |
-| `siren` | 0.30 | 4회 |
-| `door_wood_knock` | 0.54 | 2회 |
-| `doorbell` | 0.30 | 2회 |
+| 클래스 | 임계값 | 연속 | 요구 지속시간 | recall | precision |
+|---|---|---|---|---|---|
+| `glass_breaking` | 0.30 | 2회 | 0.96초 | 0.96 | 0.91 |
+| `siren` | 0.30 | 4회 | 1.92초 | 0.90 | 0.77 |
+| `door_wood_knock` | 0.54 | 2회 | 0.96초 | 0.89 | 0.88 |
+| `doorbell` | 0.30 | 2회 | 0.96초 | 0.74 | 0.91 |
 
-**연속 조건**: 같은 소리가 연속으로 그만큼 나와야 알림이 울립니다.
-사이렌은 오래 울리므로 4회를 요구해도 놓치지 않지만,
-유리·노크·초인종은 1~2초짜리라 조건을 높이면 아예 안 울립니다.
-
-**쿨다운**: 사이렌이 30초 울려도 사용자에겐 알림 1번이어야 합니다.
-
-이 값들은 `grabbit_model.npz` 안에 들어 있습니다. 바꾸려면 PC에서
-`deploy_config.py` 로 다시 정한 뒤 `export_model.py` 를 실행하세요.
-**코드에 직접 적지 마세요** — 학습·평가·배포가 다른 값을 쓰게 됩니다.
-
-## 성능
-
-**실환경 2시간 녹음 기준** (같은 RPi 마이크)
-
-| 클래스 | recall | precision |
-|---|---|---|
-| glass_breaking | 0.96 | 0.91 |
-| siren | 0.90 | 0.77 |
-| door_wood_knock | 0.89 | 0.88 |
-| doorbell | 0.74 | 0.91 |
-
-오알림 시간당 약 1.5회 (연속 조건 2회 기준).
+**연속 조건**은 결국 "그만큼 지속돼야 한다"는 뜻입니다. 사이렌은 오래 울리므로
+4회를 요구해도 놓치지 않지만, 유리·노크·초인종은 1~2초짜리라 조건을 높이면
+아예 안 울립니다. 오알림은 실환경 2시간 녹음 기준 **하루 1회 이하**입니다.
 
 **주의**: recall은 데이터셋(깨끗한 녹음) 기준입니다. 마이크에서 멀리 떨어진
 소리는 이보다 낮게 나올 수 있으며, 아직 측정하지 않았습니다.
 `record/record_events.py` 로 거리별 녹음을 하면 확인할 수 있습니다.
 
+## `--hop` 을 함부로 바꾸지 마세요
+
+임계값과 연속 조건은 **판정 간격 0.48초**를 전제로 정해진 값입니다
+(`training/eval_stream.py` 의 `FRAME_HOP`). hop 을 바꾸면 같은 "연속 N회"가
+요구하는 **지속시간이 통째로 바뀝니다.** 실환경 2시간 녹음으로 재보면:
+
+| | hop | glass 지연 | siren 지연 | glass 임계값 | 전체 recall |
+|---|---|---|---|---|---|
+| 현행 | 0.48초 | 0.96초 | 1.92초 | 0.30 | **0.874** |
+| hop만 1초로 | 0.96초 | 1.92초 | 3.84초 | 0.30 | 0.874 |
+| hop 1초 + 연속 절반 | 0.96초 | 0.96초 | 1.92초 | 0.70 | 0.845 |
+
+세 경우 다 오알림은 하루 1회 이하지만, hop 을 늘리면 알림이 그만큼 늦어지고,
+연속 조건을 줄여 보상하면 오알림 예산을 지키느라 임계값이 올라가
+`glass_breaking` recall 이 0.96 → 0.88 로 떨어집니다. 가장 위험한 클래스라
+손해가 큽니다.
+
+기본값과 다른 hop 으로 실행하면 시작할 때 경고가 나옵니다.
+
 ## 속도
 
-PC에서 5초 오디오 1회 처리에 31ms. RPi4에서는 10~20배 느려도
-300~600ms 수준이라 실시간 처리에 여유가 있습니다.
-실제 측정은 `record/bench_latency.py` 로 하세요.
+hop 0.48초는 **한 창 처리가 480ms 안에 끝나야** 밀리지 않습니다.
+PC에서 5초 오디오 1회 처리에 31ms 였고, RPi4 실측은 아직 없습니다.
+`record/bench_latency.py` 로 먼저 재세요.
 
-체감 지연 = `--hop` 값 + 처리 시간. 기본 1초 간격이면 약 1.3~1.6초입니다.
+넘으면 `run_rpi.py` 가 실행 중에 경고를 찍고, 종료할 때 평균 처리 시간과
+초과 횟수를 출력합니다. 그때는 `--hop` 을 늘리는 대신 **AI 파트에 연락**해서
+연속 조건과 임계값을 함께 다시 잡는 편이 낫습니다 (위 표의 세 번째 줄).
+
+체감 지연 = 요구 지속시간 + 처리 시간입니다. 유리 깨짐이면 약 1.3초,
+사이렌은 약 2.2초입니다.
+
+## 방향 추정 (DoA)
+
+4채널 어레이 + `doa_knn_model_v5.pkl` 이 있을 때만 동작하고, 아니면 `-1`
+(unknown)로 나갑니다. 폰은 `-1` 을 unknown 으로 처리합니다.
+
+- 피처: `[delay_x, delay_y, rms0~3 비율]` 6차원 → StandardScaler → KNN
+- 라벨 → 각도: `front 0 / right 90 / rear 180 / left 270`
+- **0.256초(4096샘플) 구간**에서 계산합니다. 학습 데이터를 모을 때 쓴 길이와
+  같아야 하기 때문입니다 — 더 긴 구간에서 상관 피크를 찾으면 학습에 없던
+  delay 값이 나와 예측이 무너집니다
+- 알림이 울린 시점의 **5초 버퍼 안에서 가장 시끄러운 0.256초**를 골라 씁니다.
+  연속 조건 때문에 알림은 소리가 난 뒤 2~4창 지나서 울리므로, 마지막 청크만
+  보면 정작 그 소리가 없습니다
+- 최대 음량이 3000(int16) 미만이면 추정하지 않고 `-1` 을 보냅니다
 
 ## 모델을 다시 내보낼 때
 
@@ -120,6 +170,9 @@ python export/export_model.py
 
 `grabbit_model.npz` 만 RPi로 다시 복사하면 됩니다.
 
+임계값·연속 조건은 `grabbit_model.npz` 안에 들어 있습니다.
+**코드에 직접 적지 마세요** — 학습·평가·배포가 다른 값을 쓰게 됩니다.
+
 ## 문제 해결
 
 | 증상 | 해결 |
@@ -128,6 +181,10 @@ python export/export_model.py
 | 녹음이 끊김 / 장치 오류 | `arecord -l` 로 이름 확인 후 `--device plughw:카드,장치` |
 | 아무 알림도 안 울림 | `--verbose` 로 확신도 확인. 마이크 음량은 `alsamixer` 에서 조정 |
 | `1024차원 임베딩 출력이 없습니다` | MediaPipe판 yamnet.tflite(4MB)를 받았을 때 발생. 아래 안내대로 다시 받으세요 |
+| `[DoA] 파일을 찾지 못함` | pkl 두 개를 `run_rpi.py` 옆에 두거나 `--doa-model`/`--doa-scaler` 지정 |
+| `[DoA] 모델 로드 실패` | scikit-learn 버전 불일치가 대부분. `pip install "scikit-learn==1.6.1"` |
+| 방향이 늘 `-1` | `--channels 4` 인지, 소리가 3000(int16) 이상 큰지 확인 |
+| `[경고] 처리 ...ms > 간격 ...ms` | RPi가 못 따라가는 중. `bench_latency.py` 결과와 함께 AI 파트에 알려주세요 |
 
 ### yamnet.tflite 다시 받기
 
