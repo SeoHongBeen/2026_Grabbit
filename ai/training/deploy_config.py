@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(_ROOT, "core"))
 import config
 import features as F
 from cnn import YamnetHead
-from eval_stream import to_events, load_models, COOLDOWN_SEC
+from eval_stream import to_events, load_models, COOLDOWN_SEC, FRAME_HOP
 from utils import map_label
 
 if sys.platform == "win32":
@@ -42,12 +42,25 @@ BUDGET_PER_DAY = {
     3: 1.0,   # doorbell        — 노크와 같은 용도. 헛울림 손해도 같은 수준
 }
 
+# RPi가 실제로 판정하는 간격(run_rpi.py 의 --hop). 스트림 캐시는 FRAME_HOP
+# (0.48초) 간격이라 이 값에 맞게 솎아서 측정한다.
+#
+# 이걸 맞추지 않으면 도구와 배포가 다른 조건을 보게 된다. "연속 N회"는 결국
+# "N × hop 초 동안 지속"이라, 같은 규칙이라도 hop 이 다르면 요구 지속시간과
+# 알림 지연이 통째로 달라진다.
+DEPLOY_HOP = 1.0
+
 # 연속 조건: 소리가 얼마나 오래 지속되는지에 맞춘다.
 # 유리·노크·초인종은 1~2윈도우에만 나타나므로 높이면 아예 안 울린다.
+#
+# 사이렌 4→2: DEPLOY_HOP 1초에서 4회는 4초를 요구해 알림이 그만큼 늦었다.
+# 2회로 줄여도 임계값·recall·오알림이 그대로라(실환경 2시간 재측정) 공짜다.
+# 유리·초인종은 1회로 줄이면 오알림 예산 때문에 임계값이 0.30 → 0.70/0.61 로
+# 올라가고 recall 이 0.96 → 0.88 / 0.74 → 0.70 으로 떨어져서 2회를 유지한다.
 CONSECUTIVE = {
     0: 2,     # glass_breaking  — 순간적
-    1: 4,     # siren           — 계속 울린다
-    2: 2,     # door_wood_knock — 순간적
+    1: 2,     # siren           — 계속 울리므로 더 요구할 이유가 없다
+    2: 1,     # door_wood_knock — 순간적
     3: 2,     # doorbell        — 차임 1~2초. 노크와 같은 길이
     4: 1,     # others
 }
@@ -100,6 +113,17 @@ def main():
     rule = np.array([CONSECUTIVE[c] for c in range(config.NUM_CLASSES)])
     grid = np.round(np.arange(0.30, 0.999, 0.005), 3)
 
+    # 캐시(FRAME_HOP 간격)를 배포 간격으로 솎는다. 시작 위상에 따라 결과가
+    # 조금씩 달라지므로 모든 위상을 재고 가장 나쁜 쪽을 취한다
+    stride = max(1, int(round(DEPLOY_HOP / FRAME_HOP)))
+    hop = FRAME_HOP * stride
+    print("배포 간격 %.2f초로 측정 (캐시 %.2f초 → %d칸씩 솎음)\n"
+          % (hop, FRAME_HOP, stride))
+
+    def n_events(t):
+        return max(len(to_events(probs[off::stride], t, rule, COOLDOWN_SEC, hop=hop))
+                   for off in range(stride))
+
     chosen = np.zeros(config.NUM_CLASSES)
     rows = []
 
@@ -110,9 +134,9 @@ def main():
         for thr in grid:
             t = np.full(config.NUM_CLASSES, 1.1)   # 이 클래스만 켜고 측정
             t[c] = thr
-            ev = to_events(probs, t, rule, COOLDOWN_SEC)
-            if len(ev) / dur_hr <= budget_hr:
-                pick, n_ev = float(thr), len(ev)
+            n = n_events(t)
+            if n / dur_hr <= budget_hr:
+                pick, n_ev = float(thr), n
                 break
 
         chosen[c] = pick
@@ -131,13 +155,13 @@ def main():
                      n_ev / dur_hr * HOURS_PER_DAY, upper, rec, prec))
 
     # 전체 적용 결과
-    ev_all = to_events(probs, chosen, rule, COOLDOWN_SEC)
+    n_all = n_events(chosen)
     cp = clip_prob.argmax(1)
     cc = cp.copy()
     thr_of = np.array([chosen[p] if p in F.MINORITY else 0.0 for p in cp])
     cc[np.isin(cp, F.MINORITY) & (clip_prob.max(1) < thr_of)] = F.OTHERS
     rec_all = recall_score(y_clip, cc, labels=F.MINORITY, average="macro", zero_division=0)
-    per_hour = len(ev_all) / dur_hr
+    per_hour = n_all / dur_hr
 
     print("=" * 78)
     print(" 출시 설정 (클래스별 오알림 예산 기준)")
@@ -149,15 +173,16 @@ def main():
               % (name, bud, thr, rate, upper, rec, prec))
 
     print("\n 연속 조건: " + ", ".join(
-        "%s %d회" % (F.CLASS_NAMES[c], CONSECUTIVE[c]) for c in F.MINORITY))
-    print(" 쿨다운: %.0f초" % COOLDOWN_SEC)
+        "%s %d회 (%.2f초)" % (F.CLASS_NAMES[c], CONSECUTIVE[c], CONSECUTIVE[c] * hop)
+        for c in F.MINORITY))
+    print(" 쿨다운: %.0f초 / 판정 간격: %.2f초" % (COOLDOWN_SEC, hop))
 
     print("\n" + "-" * 78)
     print(" 종합")
     print("-" * 78)
     print(" 소리 macro recall      %.3f" % rec_all)
     print(" 오알림 (하루 환산)     %.1f회   (관측 %d회 / %.1f시간)"
-          % (per_hour * HOURS_PER_DAY, len(ev_all), dur_hr))
+          % (per_hour * HOURS_PER_DAY, n_all, dur_hr))
 
     # 측정 한계를 명시한다. 짧은 녹음으로 낮은 빈도를 확인했다고 말할 수 없다.
     floor = 3.0 / dur_hr * HOURS_PER_DAY

@@ -35,10 +35,14 @@ from grabbit import Detector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# 임계값·연속 조건을 정할 때 쓴 판정 간격 (training/eval_stream.py 의 FRAME_HOP).
+# 임계값·연속 조건을 정할 때 쓴 판정 간격 (training/deploy_config.py 의 DEPLOY_HOP).
 # "연속 N회"는 결국 "N × hop 초 동안 지속"이라는 뜻이라, 이 값이 달라지면
 # 같은 npz 를 써도 요구 지속시간과 알림 지연이 통째로 바뀐다.
-TUNE_HOP = 0.48
+#
+# 0.48초로 낮췄더니 RPi4가 못 따라가 오디오가 밀렸다. 간격을 좁히는 대신
+# 연속 조건을 줄여(사이렌 4→2, 노크 2→1) 지연을 절반으로 만들었고,
+# 그렇게 해도 임계값·recall·오알림은 그대로였다.
+TUNE_HOP = 1.0
 
 # ===== 방향 추정 (DoA) =====
 # 주하 v5 모델: 6차원 피처 [delay_x, delay_y, rms0~3 비율] -> StandardScaler -> KNN
@@ -145,7 +149,7 @@ def estimate_direction(frames):
     소리 방향(도, 0~359). 추정 실패면 -1
 
     frames: (N, 4) int16 원본 (5초 버퍼 전체). 가장 큰 소리가 난 0.256초
-    구간을 골라서 추정한다 — 알림은 연속 조건 때문에 소리가 난 뒤 2~4창
+    구간을 골라서 추정한다 — 알림은 연속 조건 때문에 소리가 난 뒤 1~2창
     지나서 울리므로, 마지막 청크에는 정작 그 소리가 없을 수 있다
     """
     if _doa_model is None or frames is None:
