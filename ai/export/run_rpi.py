@@ -155,6 +155,23 @@ def open_mic(device, sr, channels):
         sys.exit("arecord 가 없습니다 → sudo apt install alsa-utils")
 
 
+def read_exact(stream, n):
+    """
+    파이프에서 정확히 n바이트를 모아 돌려준다. 녹음이 끝났으면 None
+
+    파이프는 한 번의 read 로 요청한 만큼 주지 않는다 — 그 순간 도착해 있는
+    만큼만 준다. 파이프 버퍼가 64KB라 4채널 1초(128KB)는 애초에 한 번에
+    올 수 없으므로, 다 찰 때까지 이어 붙여야 한다
+    """
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = stream.read(n - len(buf))
+        if not chunk:                        # arecord 종료 = EOF
+            return None
+        buf += chunk
+    return bytes(buf)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default=None, help="예: plughw:1,0")
@@ -205,9 +222,14 @@ def main():
 
     try:
         while True:
-            raw = mic.stdout.read(need)
-            if not raw or len(raw) < need:
-                err = mic.stderr.read().decode("utf-8", "replace").strip()
+            raw = read_exact(mic.stdout, need)
+            if raw is None:
+                # arecord 를 먼저 죽여야 stderr 가 EOF 로 닫힌다 (안 그러면 read 가 멈춤)
+                mic.terminate()
+                try:
+                    err = mic.stderr.read().decode("utf-8", "replace").strip()
+                except Exception:
+                    err = ""
                 sys.exit("녹음이 끊겼습니다.\n%s\n장치 이름을 확인하세요 (arecord -l)" % err)
 
             chunk = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
