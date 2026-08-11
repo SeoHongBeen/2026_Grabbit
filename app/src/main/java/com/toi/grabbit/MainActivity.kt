@@ -5,7 +5,9 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -53,6 +55,17 @@ class MainActivity : AppCompatActivity() {
             loadUrl("file:///android_asset/grabbit_ui.html")
         }
         setContentView(web)
+
+        // '다른 앱 위에 표시' 권한: 화면 꺼짐/다른 앱 사용 중에도
+        // 알림 수신 시 Grabbit 화면을 즉시 띄우기 위해 필요 (청각장애인 핵심 UX)
+        if (!Settings.canDrawOverlays(this)) {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+            )
+        }
 
         // 알림 권한 요청 (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import android.app.PendingIntent
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -57,28 +56,25 @@ class GrabbitRelayService : Service() {
                 else "워치 스킵(others/미등록): ${alert.`class`}"
             )
 
-            // others가 아니면 폰 화면 깨우기 + full-screen 알림
-            // (화면 꺼진 상태에서도 폰이 켜지면서 알림 화면 표시)
+            // others가 아니면 앱 화면 직행 처리.
+            // 순서 중요: full-screen 알림을 "화면이 꺼진 상태에서" 먼저 게시해야
+            // 시스템이 화면을 켜면서 앱을 직접 띄워줌.
+            // (WakeLock으로 화면을 먼저 켜면 heads-up 알림으로 격하되어 배경화면만 보임)
             if (sent) {
-                wakePhoneScreen(context)
                 postPhoneAlertNotification(context, alert)
-            }
-        }
-
-        /** 화면 꺼진 상태에서 알림 수신 시 폰 화면을 깨움 (5초 후 자동 해제) */
-        @Suppress("DEPRECATION")
-        private fun wakePhoneScreen(context: Context) {
-            try {
-                val pm = context.getSystemService(PowerManager::class.java)
-                pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                        PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                        PowerManager.ON_AFTER_RELEASE,
-                    "grabbit:phone_alert_wake"
-                ).acquire(5_000L)
-                Log.d(TAG, "폰 화면 깨우기 WakeLock 획득")
-            } catch (e: Exception) {
-                Log.w(TAG, "폰 화면 깨우기 실패: ${e.message}")
+                // '다른 앱 위에 표시' 권한이 있으면 즉시 앱 화면 실행 (가장 확실한 경로)
+                try {
+                    context.startActivity(
+                        Intent(context, MainActivity::class.java).addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        )
+                    )
+                    Log.d(TAG, "알림 수신 → 앱 화면 직접 실행")
+                } catch (e: Exception) {
+                    Log.w(TAG, "직접 실행 실패(full-screen 알림으로 대체): ${e.message}")
+                }
             }
         }
 
