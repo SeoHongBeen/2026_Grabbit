@@ -79,9 +79,13 @@ class Detector:
                 "MediaPipe판(4MB)은 클래스 점수만 뱉으므로 쓸 수 없습니다. "
                 "README의 안내대로 다시 받으세요.")
 
-        # 알림 판정 상태
-        self._run_cls, self._run_len = -1, 0
+        # 알림 판정 상태 — 클래스별 최근 판정 기록(True=임계값 넘음)
+        self._hist = {}
         self._last_alert = {}
+
+        # 최근 window[c] 창 중 consecutive[c] 창이 넘으면 울린다.
+        # 한 창 튀어도 카운트를 처음부터 다시 세지 않도록 한 번의 실패를 허용
+        self.window = {c: int(self.consecutive[c]) + 1 for c in self.minority}
 
     # ------------------------------------------------------------------
     # 전처리
@@ -151,32 +155,39 @@ class Detector:
     # 알림 판정 (연속 조건 + 쿨다운)
     # ------------------------------------------------------------------
 
-    def should_alert(self, cls, conf, now, cooldown=30.0):
+    def should_alert(self, probs, now, cooldown=10.0):
         """
-        이번 판정으로 알림을 울릴지, 상태를 내부에 누적
+        이번 판정으로 울릴 클래스 → (클래스, 확신도). 울릴 게 없으면 None
 
-        연속 조건: 같은 클래스가 consecutive[c]번 연속 나와야 울림
-          사이렌처럼 오래 지속되는 소리는 높여도 놓치지 않지만,
-          유리·노크·초인종은 1~2회만 나타나므로 높이면 아예 안 울림
+        argmax 는 보지 않는다. others 가 1등이라도 위험음 확률이 임계값을
+        넘으면 한 표로 친다 — 유리 깨짐처럼 others 와 확률을 나눠 갖는
+        소리가 argmax 를 못 잡아 몇 초씩 늦어지던 걸 없애기 위함
+        연속 조건: 최근 window[c] 창 중 consecutive[c] 창이 임계값을 넘어야 울림
+          중간에 한 창 튀어도 카운트를 처음부터 다시 세지 않는다
         쿨다운: 한 번 울리면 그 시간 동안 같은 클래스는 다시 안 울림
-          사이렌이 30초 울려도 사용자에겐 알림 1번이어야 함
+          쿨다운 중에도 판정 기록은 계속 쌓이므로, 사이렌처럼 소리가
+          이어지면 쿨다운이 풀리는 즉시 다시 울린다
         """
-        fired = cls in self.minority and conf >= float(self.thresholds[cls])
-        c = cls if fired else self.others
+        best = None
 
-        if c == self._run_cls:
-            self._run_len += 1
-        else:
-            self._run_cls, self._run_len = c, 1
+        for c in sorted(self.minority):
+            hist = self._hist.setdefault(c, [])
+            hist.append(bool(probs[c] >= float(self.thresholds[c])))
+            del hist[:-self.window[c]]
 
-        if c == self.others or self._run_len < self.consecutive[c]:
-            return False
+            if sum(hist) < self.consecutive[c]:
+                continue
+            if now - self._last_alert.get(c, -1e9) < cooldown:
+                continue
+            if best is None or probs[c] > probs[best]:
+                best = c
 
-        if now - self._last_alert.get(c, -1e9) < cooldown:
-            return False
+        if best is None:
+            return None
 
-        self._last_alert[c] = now
-        return True
+        self._last_alert[best] = now
+        self._hist[best] = []            # 울렸으면 비워서 처음부터 다시 쌓게 한다
+        return best, float(probs[best])
 
     def name(self, cls):
         return self.class_names[cls]
