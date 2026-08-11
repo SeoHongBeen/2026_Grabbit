@@ -76,3 +76,4 @@ local.properties
 .DS_Store
 local.properties
 .gradle/
+backend/db.sqlite3
