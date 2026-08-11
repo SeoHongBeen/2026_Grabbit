@@ -108,7 +108,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun sendTestAlert() {
             val classes = listOf(
-                "crackling_fire", "glass_breaking", "siren",
+                "glass_breaking", "siren", "doorbell",
                 "door_wood_knock", "door_wood_creaks", "others"
             )
             // 4방향(앞/오른쪽/뒤/왼쪽) 균등 랜덤

@@ -12,8 +12,8 @@ import random
 import time
 import urllib.request
 
-SOUND_CLASSES = ["crackling_fire", "glass_breaking", "siren", "door_wood_knock", "door_wood_creaks", "others"]
-DANGER_MAP = {"crackling_fire": 3, "glass_breaking": 3, "siren": 3, "door_wood_knock": 2, "door_wood_creaks": 1, "others": 0}
+SOUND_CLASSES = ["glass_breaking", "siren", "door_wood_knock", "doorbell", "door_wood_creaks", "others"]
+DANGER_MAP = {"glass_breaking": 3, "siren": 3, "door_wood_knock": 2, "doorbell": 2, "door_wood_creaks": 1, "others": 0}
 
 
 def make_alert():

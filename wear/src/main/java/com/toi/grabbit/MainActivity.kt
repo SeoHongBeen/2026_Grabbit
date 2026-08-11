@@ -261,7 +261,7 @@ fun GrabbitWatchScreen(alertState: MutableState<SoundAlert?>) {
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     listOf(
-                        Triple("crackling_fire", "#FF3B30", "urgent"),
+                        Triple("doorbell", "#FF9500", "normal"),
                         Triple("glass_breaking", "#FF3B30", "urgent"),
                         Triple("siren", "#FF3B30", "urgent")
                     ).forEach { (label, color, vib) ->

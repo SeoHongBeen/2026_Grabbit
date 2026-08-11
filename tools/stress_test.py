@@ -28,12 +28,12 @@ BURST_SEQUENCE = [
     ("door_wood_knock",  0,   "중간/앞"),
     ("glass_breaking",   180, "긴급/뒤"),
     ("door_wood_creaks", 270, "낮음/왼쪽"),
-    ("crackling_fire",   45,  "긴급/오른쪽"),
+    ("doorbell",         45,  "중간/오른쪽"),
 ]
 
 # 실전 시나리오: 긴급 진동 중에 낮은 알림이 끼어드는 상황 재현
 SCENARIO_SEQUENCE = [
-    ("crackling_fire",   0,   "긴급 시작 (긴 진동)"),
+    ("siren",            0,   "긴급 시작 (긴 진동)"),
     ("door_wood_creaks", 90,  "1.5초 뒤 낮은 알림 - 긴급 진동을 끊는지 체감"),
     ("siren",            180, "다시 긴급"),
     ("others",           -1,  "others - 워치에 안 가고 폰 기록만 남아야 함"),
