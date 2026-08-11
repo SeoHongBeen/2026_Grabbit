@@ -34,6 +34,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // 잠금/화면 꺼짐 상태에서 알림으로 실행될 때 화면을 켜고 잠금 위에 표시
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+
         // 저장된 이력 복원 (WebView 로드 전에)
         AlertBus.restore(this)
 

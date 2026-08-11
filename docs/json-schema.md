@@ -25,7 +25,8 @@ RPi가 소리를 감지하면 아래 형식의 JSON을 폰으로 HTTP POST 한�
 ## 참고
 
 - 전송 방식: HTTP POST, Content-Type: application/json
-- 폰은 클래스 매핑 후 워치로 전달 (others/미등록은 스킵, 이력에만 저장)
+- 폰은 클래스 매핑 후 워치로 전달
+- others/미등록 클래스는 RPi에서 아예 전송하지 않음 (2026-08-11 확정 - 알림 자체 없음). 폰/워치의 others 처리 코드는 방어용으로만 유지
 - direction 값이 없으면(추정 실패) -1로 보낸다
 
 ## class 확정 목록 (2026-08-08 업데이트, 실내 전용)
@@ -38,7 +39,7 @@ RPi가 소리를 감지하면 아래 형식의 JSON을 폰으로 HTTP POST 한�
 | door_wood_knock | 2 | #FF9500 | normal | 노크 소리 |
 | doorbell | 2 | #FF9500 | normal | 초인종 |
 | door_wood_creaks | 1 | #007AFF | soft | 문 소리 |
-| others | 0 | - | - | 워치 전송 안 함, 폰 이력만 |
+| others | 0 | - | - | RPi에서 전송 안 함 (알림 없음) |
 
 ※ 미등록 class는 others와 동일 처리
 ※ doorbell 추가 (2026-08-08): RPi 모델이 door_wood_knock과 별개로 doorbell을 내는데 앱 매핑에 누락돼 있어 추가함. danger=2는 기존 확정값 유지.
@@ -55,6 +56,7 @@ RPi가 소리를 감지하면 아래 형식의 JSON을 폰으로 HTTP POST 한�
     - 뒤: 135~224
     - 왼쪽: 225~314
 
-## 남은 이슈 (2026-08-08)
-- crackling_fire / door_wood_creaks: 스키마엔 있지만 RPi 모델이 아직 안 내는 클래스 (반대 방향 문제, 지금 당장 깨지는 건 없음).
-- 화재음(crackling_fire)은 청각장애인 안전 관점에서 중요하므로, 가스누출 클래스 결정할 때 같이 묶어서 논의 예정.
+## 남은 이슈 (2026-08-11 갱신)
+- crackling_fire / door_wood_creaks: 스키마엔 있지만 AI 모델이 실제로 내지 않는 클래스 (모델 클래스: glass_breaking, siren, door_wood_knock, doorbell + others). 발표/시연 자료는 실제 4클래스 기준으로 작성할 것.
+- 화재음(crackling_fire)은 오알림 문제로 모델에서 제외됨 (실측: 오알림 99%가 화재 오탐). 향후 화재경보기 '경보음' 감지 방향으로 재검토.
+- [확정 2026-08-11] others는 RPi가 전송하지 않음 → 폰 히스토리에도 남지 않음. 시연에서 "기타 소리 무시" 장면이 필요하면 mock_rpi로 재현.

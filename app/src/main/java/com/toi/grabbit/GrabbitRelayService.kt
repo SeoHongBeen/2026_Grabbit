@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.app.PendingIntent
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.ktor.serialization.gson.gson
@@ -32,6 +34,8 @@ class GrabbitRelayService : Service() {
     companion object {
         const val CHANNEL_ID = "grabbit_relay"
         const val NOTI_ID = 1
+        const val ALERT_CHANNEL_ID = "grabbit_phone_alerts"
+        const val ALERT_NOTI_ID = 2
         const val PORT = 8080
         const val TAG = "Grabbit"
 
@@ -52,6 +56,65 @@ class GrabbitRelayService : Service() {
                 if (sent) "워치 전송 시도: ${alert.`class`}"
                 else "워치 스킵(others/미등록): ${alert.`class`}"
             )
+
+            // others가 아니면 폰 화면 깨우기 + full-screen 알림
+            // (화면 꺼진 상태에서도 폰이 켜지면서 알림 화면 표시)
+            if (sent) {
+                wakePhoneScreen(context)
+                postPhoneAlertNotification(context, alert)
+            }
+        }
+
+        /** 화면 꺼진 상태에서 알림 수신 시 폰 화면을 깨움 (5초 후 자동 해제) */
+        @Suppress("DEPRECATION")
+        private fun wakePhoneScreen(context: Context) {
+            try {
+                val pm = context.getSystemService(PowerManager::class.java)
+                pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                        PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                        PowerManager.ON_AFTER_RELEASE,
+                    "grabbit:phone_alert_wake"
+                ).acquire(5_000L)
+                Log.d(TAG, "폰 화면 깨우기 WakeLock 획득")
+            } catch (e: Exception) {
+                Log.w(TAG, "폰 화면 깨우기 실패: ${e.message}")
+            }
+        }
+
+        /** full-screen intent 알림: 잠금/꺼짐 상태에서 시스템이 화면을 켜며 앱을 띄움 */
+        private fun postPhoneAlertNotification(context: Context, alert: SoundAlert) {
+            val nm = context.getSystemService(NotificationManager::class.java)
+            if (nm.getNotificationChannel(ALERT_CHANNEL_ID) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        ALERT_CHANNEL_ID, "Grabbit 위험 알림",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply { description = "감지된 위험 소리 알림" }
+                )
+            }
+            val spec = alertMap[alert.`class`]
+            val fullScreenPi = PendingIntent.getActivity(
+                context, 1,
+                Intent(context, MainActivity::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                ),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val noti = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle(spec?.label ?: alert.`class`)
+                .setContentText("방향: ${alert.direction}도 / 위험도 ${alert.danger}")
+                .setContentIntent(fullScreenPi)
+                .setFullScreenIntent(fullScreenPi, true)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setAutoCancel(true)
+                .build()
+            nm.notify(ALERT_NOTI_ID, noti)
+            Log.d(TAG, "폰 full-screen 알림 게시: ${alert.`class`}")
         }
     }
 
