@@ -24,11 +24,12 @@ TAKES = 5               # 클래스 x 거리 당 반복 횟수
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                    "..", "dataset", "realworld", "events")
 
+# 이름은 playback/ 의 재생 파일명과 같아야 한다 (data/build_playback.py 의 SHORT_NAME).
 CLASSES = {
     "1": ("siren", "사이렌 — 스피커로 재생"),
     "2": ("knock", "노크 — 실제로 문을 두드리세요 (재생보다 정확합니다)"),
     "3": ("glass", "유리 깨짐 — 스피커로 재생"),
-    "4": ("fire", "불 타는 소리 — 스피커로 재생 (저음이 잘 안 나와 결과가 나쁠 수 있음)"),
+    "4": ("doorbell", "초인종 — 실제 초인종이 있으면 누르고, 없으면 스피커로 재생"),
 }
 
 

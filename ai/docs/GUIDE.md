@@ -41,6 +41,7 @@
 | `data/build_dataset.py` | 3개 데이터셋을 합쳐 5초 단위로 통일 |
 | `data/build_embeddings.py` | 위 결과를 YAMNet에 통과시켜 임베딩 생성 |
 | `data/relabel_doorbell.py` | FSD50K에서 초인종 클립을 받아와 manifest에 반영 |
+| `data/build_playback.py` | 실환경 측정 때 스피커로 틀 클립을 클래스당 5개 선별 |
 
 ### `training/` — 학습·평가
 
@@ -76,6 +77,7 @@
 5. training/eval_stream.py     연속 오디오 오알림 측정        (약 8분)
 6. training/deploy_config.py   출시 설정 확정                 (수초)
 7. export/export_model.py      RPi 배포 파일 생성             (수초)
+8. data/build_playback.py      실환경 측정용 재생 클립 선별    (수초)
 ```
 
 어느 폴더에서 실행해도 됩니다 (`python data/build_dataset.py` 처럼).
@@ -96,12 +98,14 @@
 3. `core/config.py` → `NUM_CLASSES`
 4. `data/build_dataset.py` → `ESC50_MAP` 또는 `DROP_CATEGORIES`
 5. `training/deploy_config.py` → `BUDGET_PER_DAY`, `CONSECUTIVE`
-6. **기존 모델·캐시 삭제** — 클래스 개수가 바뀌면 형태가 안 맞습니다
+6. `record/record_events.py` → `CLASSES`, `data/build_playback.py` → `SHORT_NAME`
+   (둘의 이름이 어긋나면 실환경 녹음 파일명에서 클래스를 못 읽습니다)
+7. **기존 모델·캐시 삭제** — 클래스 개수가 바뀌면 형태가 안 맞습니다
    ```
    rm dataset/mfcc/stream_probs_*.npz dataset/mfcc/thresholds_*.npy
    rm model/best_model_yamnet*.pth
    ```
-7. 3절의 실행 순서 전부
+8. 3절의 실행 순서 전부
 
 ### 특정 클래스를 더 잘 잡고 싶다
 
@@ -206,7 +210,7 @@ RPi가 5초마다 판정하면 시간당 720번이라 오알림이 시간당 27�
 |---|---|
 | 성능이 이상하게 좋음 | 그룹 분리가 깨졌거나 test 데이터가 학습에 섞임 |
 | 학습은 잘 되는데 실환경에서 안 됨 | 음량 정규화 불일치, 또는 전처리가 학습과 다름 |
-| 클래스 바꾼 뒤 shape 에러 | 옛 모델·캐시 삭제 안 함 (4절 6번) |
+| 클래스 바꾼 뒤 shape 에러 | 옛 모델·캐시 삭제 안 함 (4절 7번) |
 | `training/test.py` 가 엉뚱한 파일을 읽음 | `data/build_dataset.py` 를 다시 안 돌려 `samples.csv` 가 옛것 |
 | 한글이 깨짐 | 스크립트 시작 부분의 `chcp 65001` 이 빠짐 |
 | `ModuleNotFoundError` | 파일을 옮긴 뒤 경로 설정이 빠짐 → `python tools/check_imports.py` 로 확인 |
