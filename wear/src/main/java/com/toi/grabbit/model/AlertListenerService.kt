@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
-import android.os.PowerManager
 import android.util.Log
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
@@ -45,47 +44,25 @@ class AlertListenerService : WearableListenerService() {
         // 1) 진동: 앱 화면 유무와 무관하게 서비스에서 바로 실행
         AlertEffects.vibrate(this, alert.vibration)
 
-        // 2) 화면 깨우기: 워치 화면이 꺼져 있어도 즉시 켜지도록
-        wakeScreen()
-
-        // 3) 액티비티가 떠 있으면 콜백으로 화면만 갱신
+        // 2) 액티비티가 떠 있으면 콜백으로 화면만 갱신
         val callback = onAlertReceived
         if (callback != null) {
             callback(alert)
             return
         }
 
-        // 4) 액티비티가 없으면: 실행 시도 + full-screen 알림 게시
-        //    (Wear OS 백그라운드 액티비티 실행 제한에 걸릴 수 있어 알림을 안전망으로 병행.
-        //     full-screen intent는 시스템이 화면을 켜면서 직접 액티비티를 띄워줌)
+        // 3) 액티비티가 없으면: full-screen 알림을 "먼저" 게시.
+        //    순서 중요 - 화면이 꺼진 상태에서 게시해야 시스템이 화면을 켜면서
+        //    앱을 직접 띄워줌. (화면을 먼저 깨우면 heads-up으로 격하됨)
+        postAlertNotification(alert, json)
+
+        // 4) 직접 실행 시도 (시계 화면 등 화면이 켜져 있는 상태 대응.
+        //    오버레이 권한이 있으면 즉시 실행됨)
         try {
             startActivity(alertActivityIntent(json))
             Log.d(TAG, "백그라운드 수신 → 액티비티 실행 시도")
         } catch (e: Exception) {
             Log.w(TAG, "액티비티 실행 실패: ${e.message}")
-        }
-        postAlertNotification(alert, json)
-    }
-
-    /**
-     * 화면 꺼진 상태에서도 알림 화면이 보이도록 화면을 깨운다.
-     * FULL_WAKE_LOCK 계열은 deprecated지만 Wear OS에서 여전히 동작하며,
-     * 짧게(5초) 잡았다 놓으므로 배터리 영향은 미미함.
-     */
-    @Suppress("DEPRECATION")
-    private fun wakeScreen() {
-        try {
-            val pm = getSystemService(PowerManager::class.java)
-            val wakeLock = pm.newWakeLock(
-                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                    PowerManager.ON_AFTER_RELEASE,
-                "grabbit:alert_wake"
-            )
-            wakeLock.acquire(5_000L) // 5초 후 자동 해제
-            Log.d(TAG, "화면 깨우기 WakeLock 획득")
-        } catch (e: Exception) {
-            Log.w(TAG, "화면 깨우기 실패: ${e.message}")
         }
     }
 
