@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 백그라운드 수신 안전망(시스템 알림)용 - API 33+ 런타임 권한 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- full-screen intent: 화면 꺼진 상태에서 알림 화면 직접 표시용 -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <uses-feature android:name="android.hardware.type.watch" />
 

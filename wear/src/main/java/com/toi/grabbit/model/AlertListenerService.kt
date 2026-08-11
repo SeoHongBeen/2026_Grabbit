@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.PowerManager
 import android.util.Log
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
@@ -16,10 +17,10 @@ private const val ALERT_PATH = "/grabbit/alert"
 /**
  * 폰(relay 앱)이 MessageClient로 보내는 메시지를 수신하는 서비스.
  *
- * [변경] 기존에는 콜백으로 MainActivity에 전달만 했기 때문에,
- * 앱이 백그라운드/종료 상태면 알림이 통째로 유실됐음 (진동도 안 울림).
- * 이제 진동은 액티비티 유무와 무관하게 서비스에서 직접 실행하고,
- * 액티비티가 없으면 화면을 깨우면서 실행 시도 + 시스템 알림 게시(이중 안전망).
+ * 백그라운드/화면 꺼짐 상태 대응:
+ *  1) 진동은 액티비티 유무와 무관하게 서비스에서 직접 실행
+ *  2) WakeLock으로 워치 화면을 즉시 깨움
+ *  3) 액티비티 실행 시도 + full-screen intent 알림 (이중 안전망)
  */
 class AlertListenerService : WearableListenerService() {
 
@@ -42,33 +43,61 @@ class AlertListenerService : WearableListenerService() {
         }
 
         // 1) 진동: 앱 화면 유무와 무관하게 서비스에서 바로 실행
-        //    → 워치 화면 꺼짐 / 앱 종료 상태에서도 진동 보장
         AlertEffects.vibrate(this, alert.vibration)
 
-        // 2) 액티비티가 떠 있으면 콜백으로 화면만 갱신 (진동은 위에서 이미 실행됨)
+        // 2) 화면 깨우기: 워치 화면이 꺼져 있어도 즉시 켜지도록
+        wakeScreen()
+
+        // 3) 액티비티가 떠 있으면 콜백으로 화면만 갱신
         val callback = onAlertReceived
         if (callback != null) {
             callback(alert)
             return
         }
 
-        // 3) 액티비티가 없으면: 실행 시도 + 시스템 알림 게시
-        //    (Wear OS 백그라운드 액티비티 실행 제한에 걸릴 수 있어 알림을 안전망으로 병행)
+        // 4) 액티비티가 없으면: 실행 시도 + full-screen 알림 게시
+        //    (Wear OS 백그라운드 액티비티 실행 제한에 걸릴 수 있어 알림을 안전망으로 병행.
+        //     full-screen intent는 시스템이 화면을 켜면서 직접 액티비티를 띄워줌)
         try {
-            startActivity(Intent(this, MainActivity::class.java).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP
-                )
-                putExtra(MainActivity.EXTRA_ALERT_JSON, json)
-            })
+            startActivity(alertActivityIntent(json))
             Log.d(TAG, "백그라운드 수신 → 액티비티 실행 시도")
         } catch (e: Exception) {
             Log.w(TAG, "액티비티 실행 실패: ${e.message}")
         }
         postAlertNotification(alert, json)
     }
+
+    /**
+     * 화면 꺼진 상태에서도 알림 화면이 보이도록 화면을 깨운다.
+     * FULL_WAKE_LOCK 계열은 deprecated지만 Wear OS에서 여전히 동작하며,
+     * 짧게(5초) 잡았다 놓으므로 배터리 영향은 미미함.
+     */
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        try {
+            val pm = getSystemService(PowerManager::class.java)
+            val wakeLock = pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                "grabbit:alert_wake"
+            )
+            wakeLock.acquire(5_000L) // 5초 후 자동 해제
+            Log.d(TAG, "화면 깨우기 WakeLock 획득")
+        } catch (e: Exception) {
+            Log.w(TAG, "화면 깨우기 실패: ${e.message}")
+        }
+    }
+
+    private fun alertActivityIntent(json: String): Intent =
+        Intent(this, MainActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+            putExtra(MainActivity.EXTRA_ALERT_JSON, json)
+        }
 
     private fun postAlertNotification(alert: SoundAlert, json: String) {
         val nm = getSystemService(NotificationManager::class.java)
@@ -86,14 +115,7 @@ class AlertListenerService : WearableListenerService() {
         val contentIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP
-                )
-                putExtra(MainActivity.EXTRA_ALERT_JSON, json)
-            },
+            alertActivityIntent(json),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -102,11 +124,15 @@ class AlertListenerService : WearableListenerService() {
             .setContentTitle(LabelMap.displayTextFor(alert.label))
             .setContentText(DirectionMap.displayNameFor(alert.direction))
             .setContentIntent(contentIntent)
+            // full-screen intent: 화면이 꺼져 있으면 시스템이 화면을 켜면서
+            // 알림 화면(MainActivity)을 직접 띄워줌 - 화면 깨우기의 핵심
+            .setFullScreenIntent(contentIntent, true)
+            .setCategory(Notification.CATEGORY_ALARM)
             .setAutoCancel(true)
             .build()
 
         nm.notify(NOTIFICATION_ID, notification)
-        Log.d(TAG, "시스템 알림 게시: ${alert.label}")
+        Log.d(TAG, "시스템 알림 게시(full-screen): ${alert.label}")
     }
 
     companion object {
