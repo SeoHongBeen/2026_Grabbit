@@ -77,3 +77,6 @@ local.properties
 local.properties
 .gradle/
 backend/db.sqlite3
+
+# claude cleanup staging (delete this folder)
+_to_delete/
