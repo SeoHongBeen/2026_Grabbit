@@ -46,7 +46,17 @@ RPi가 소리를 감지하면 아래 형식의 JSON을 폰으로 HTTP POST 한�
 
 ## 폰 → 워치 (Data Layer, path: /grabbit/alert)
 
-폰이 위 표대로 가공해서 label/color/vibration/direction/rpiTimestamp/phoneTimestamp를 전달한다.
+폰이 위 표대로 가공해서 아래 필드를 전달한다.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| eventId | string | 폰이 생성하는 고유 ID (워치 중복 알림 방지용 - **필수**, 없으면 워치가 무시함) |
+| label | string | 워치 표시 문구 (한글) |
+| color | string | 위험도 색상 (#RRGGBB) |
+| vibration | string | 진동 타입 (urgent/normal/soft/none) |
+| direction | int | 방향 각도 (0~359, unknown=-1) |
+| rpiTimestamp | long | RPi 감지 시각 (유닉스 초) |
+| phoneTimestamp | long | 폰 중계 시각 (유닉스 초) |
 
 ## direction
 - 타입: Int (0~359, 각도)

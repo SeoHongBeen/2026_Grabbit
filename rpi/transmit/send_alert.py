@@ -67,14 +67,21 @@ class AlertSender:
             data=json.dumps(alert).encode(),
             headers={"Content-Type": "application/json"},
         )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as res:
-                print(f"[send_alert] 전송 OK: {alert}")
-                return res.status == 200
-        except Exception as e:
-            # 폰이 잠깐 안 잡혀도 감지 루프는 계속 돌아야 하므로 예외는 삼킨다
-            print(f"[send_alert] 전송 실패 ({self.url}): {e}")
-            return False
+        # 폰이 Wi-Fi 절전 중이면 첫 패킷이 씹힐 수 있어 최대 3회 재시도
+        # (첫 시도가 폰의 Wi-Fi를 깨우는 역할을 하는 경우가 실측으로 확인됨)
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as res:
+                    print(f"[send_alert] 전송 OK: {alert}")
+                    return res.status == 200
+            except Exception as e:
+                if attempt < 2:
+                    print(f"[send_alert] 재시도 {attempt + 1}/2 ({e})")
+                    time.sleep(1.0)
+                else:
+                    # 폰이 잠깐 안 잡혀도 감지 루프는 계속 돌아야 하므로 예외는 삼킨다
+                    print(f"[send_alert] 전송 실패 ({self.url}): {e}")
+        return False
 
 
 if __name__ == "__main__":
