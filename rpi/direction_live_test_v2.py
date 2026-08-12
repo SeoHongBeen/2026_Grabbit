@@ -8,12 +8,12 @@ CHANNELS = 4
 CHUNK = 1024 * 4
 FORMAT = pyaudio.paInt16
 
-# 이 값보다 큰 소리(박수 등)가 났을 때만 방향 계산
-# 너무 자주 찍히면 숫자를 올리고, 박수쳐도 반응 없으면 낮추기
-VOLUME_THRESHOLD = 3000
+VOLUME_THRESHOLD = 1500
+COOLDOWN_SEC = 0.3
 
-# 같은 박수 소리가 여러 청크에 걸쳐 중복 출력되는 것 방지 (초 단위)
-COOLDOWN_SEC = 0.5
+# 진단 모드: True면 채널별 볼륨만 출력 (마이크 매핑 확인용)
+# False면 기존처럼 방향 판정 로직 실행
+DIAGNOSTIC_MODE = True
 
 
 def estimate_direction(ch0, ch1, ch2, ch3, threshold=1):
@@ -43,9 +43,14 @@ def main():
                      input_device_index=1,
                      frames_per_buffer=CHUNK)
 
-    print("[방향 추정 실시간 테스트 - 임계값 적용]")
-    print(f"볼륨 임계값: {VOLUME_THRESHOLD} (박수 등 큰 소리에만 반응)")
-    print("종료하려면 Ctrl+C\n")
+    if DIAGNOSTIC_MODE:
+        print("[채널-마이크 매핑 진단 모드]")
+        print("마이크 하나씩 가까이 대고 톡톡 두드려보세요 (mic2 -> mic3 -> mic1 -> mic4 순서 추천)")
+        print("어느 ch가 제일 크게 뜨는지 확인하세요. 종료: Ctrl+C\n")
+    else:
+        print("[방향 추정 실시간 테스트 - 임계값 적용]")
+        print(f"볼륨 임계값: {VOLUME_THRESHOLD}")
+        print("종료하려면 Ctrl+C\n")
 
     last_trigger_time = 0
 
@@ -59,14 +64,23 @@ def main():
             ch2 = audio[2::4]
             ch3 = audio[3::4]
 
-            # 전체 볼륨 크기 (RMS 대신 최대 절댓값으로 간단히 체크)
             volume = np.max(np.abs(audio))
-
             now = time.time()
+
             if volume > VOLUME_THRESHOLD and (now - last_trigger_time) > COOLDOWN_SEC:
-                direction, dx, dy = estimate_direction(ch0, ch1, ch2, ch3)
-                print(f"[소리 감지! volume={volume:.0f}] delay_x={dx:4d}  delay_y={dy:4d}  ->  방향 판정: {direction}")
                 last_trigger_time = now
+
+                if DIAGNOSTIC_MODE:
+                    v0 = np.max(np.abs(ch0))
+                    v1 = np.max(np.abs(ch1))
+                    v2 = np.max(np.abs(ch2))
+                    v3 = np.max(np.abs(ch3))
+                    volumes = [v0, v1, v2, v3]
+                    loudest = volumes.index(max(volumes))
+                    print(f"ch0={v0:6.0f}  ch1={v1:6.0f}  ch2={v2:6.0f}  ch3={v3:6.0f}   ->  가장 큰 채널: ch{loudest}")
+                else:
+                    direction, dx, dy = estimate_direction(ch0, ch1, ch2, ch3)
+                    print(f"[소리 감지! volume={volume:.0f}] delay_x={dx:4d}  delay_y={dy:4d}  ->  방향 판정: {direction}")
 
     except KeyboardInterrupt:
         print("\n종료합니다.")
@@ -78,4 +92,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
