@@ -66,7 +66,7 @@ Android Studio에서 프로젝트 열기 → `app`(폰) / `wear`(워치) 모듈 
 - **AI/신호처리**: Python, TFLite(YAMNet), scikit-learn(KNN), librosa, PyAudio
 - **앱/통신**: Kotlin, Jetpack Compose for Wear OS, Wearable Data Layer(MessageClient), HTTP
 
-## 팀 \\
+## 팀
 
 | 이름 | 역할 | 주요 브랜치 |
 |------|------|------|
