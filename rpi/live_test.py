@@ -83,7 +83,7 @@ if __name__ == "__main__":
                      channels=CHANNELS,
                      rate=FS,
                      input=True,
-                     input_device_index=1,
+                     input_device_index=0,
                      frames_per_buffer=CHUNK)
 
     # 스트림 안정화: 초기 청크 버림
